@@ -1,0 +1,176 @@
+#!/usr/bin/perl
+
+# Copyright (c) 2020 Atomic Spuds <AtomicSpudsGame@gmail.com>
+#
+# Permission to use, copy, modify, and distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+use strict;
+use warnings;
+
+use Getopt::Std;
+
+our $opt_v = 0;
+
+getopt('v');
+
+our $cacheinfo = { };
+
+my $apiurl = "https://api.eve-echoes-market.com/market-stats";
+
+my $csv = get_data("${apiurl}/stats.csv");
+
+my $count = 0;
+my @names;
+my @data;
+my $line;
+my $sheet = { };
+foreach my $l (split(/^/,$csv)) {
+	chomp($line=$l);
+	if ($count++ == 0) {
+		(@names) = split(/,/,$line);
+		next;
+	}
+	(@data) = split(/,/,$line);
+	my $dcount = 0;
+	while (defined($names[$dcount])) {
+		my $n = $names[$dcount];
+		my $v = $data[$dcount];
+		push @{$sheet->{$n}}, $v;
+	}
+}
+
+my $icount = 0;
+foreach my $id (@{$sheet->{item_id}}) {
+	my $iname = ${$sheet->{name}}[$icount];
+	printf STDERR "${apiurl}/%s\n",$id;
+	$icount++;
+}
+	
+#get_data("${apiurl}/10100000101");
+
+1;
+
+sub get_data {
+	my ($url) = @_;
+
+	my $ci = { };
+
+	$ci->{key} = "$url";
+
+	my $ret = cache($ci);
+
+	if (defined($ret)) {
+		return $ret;
+	}
+
+	$ret = "URL: ${url}\n";
+	open(D, "ftp -o - '${url}'|");
+	while(<D>) {
+		$ret .= $_;
+	}
+	close(D);
+
+	$ci->{val} = $ret;
+
+	cache($ci);
+
+	return $ret;
+}
+
+# XXX sync with git/sw/mm/mm and eventually break out to an api class
+
+# cache($cbits)
+#
+#  my $cbits = { };
+#  $cbits->{key} = "unique lookup key";
+#  $cbits->{val} = $data;
+#  $cbits->{ttl} = 86000; # seconds till cache entry expires
+
+sub cache {
+	my ($cb) = @_;
+
+	if (!defined($cacheinfo->{hash})) {
+		cache_setup();
+	}
+
+	my $cdir = $cacheinfo->{cdir};
+
+	my $key = $cb->{key};
+	my $hash = cache_str2hash($key);
+
+	if (!defined($cb->{val})) {
+		if ($opt_v > 0) {
+			print STDERR "cache read: ".$cb->{key}." from $hash\n";
+		}
+
+		if (! -f "$cdir/$hash") {
+			if ($opt_v > 0) {
+				print STDERR "cache read: ENOTFOUND\n";
+			}
+			return undef;
+		}
+
+		my $data = "";
+		open(H,"xz -d < $cdir/$hash|");
+		while(<H>) {
+			$data .= $_;
+		}
+		close(H);
+		if ($opt_v > 0) {
+			printf STDERR "cache read: %d bytes\n", length($data);
+		}
+		return $data;
+	}
+
+	if ($opt_v > 0) {
+		print STDERR "cache write: ".$cb->{key}." to $hash\n";
+	}
+
+	open(H,"|xz -9e>$cdir/.${hash}");
+	print H $cb->{val};
+	close(H);
+
+	rename("$cdir/.${hash}", "$cdir/$hash");
+
+	if ($opt_v > 0) {
+		printf STDERR "cache write: %d bytes\n", length($cb->{val});
+	}
+
+	return;
+}
+
+sub cache_str2hash {
+	my ($str) = @_;
+
+	$cacheinfo->{hash}->add($str);
+	my $res = $cacheinfo->{hash}->hexdigest;
+	$cacheinfo->{hash}->reset;
+	return $res;
+}
+
+sub cache_setup {
+	use Crypt::Digest::SHA256;
+
+	my $HOME=$ENV{'HOME'};
+	my $cdir = "${HOME}/.cache/ee-api";
+	if (! -d "${HOME}/.cache") {
+		mkdir("${HOME}/.cache") || die
+	}
+	if (! -d $cdir) {
+		mkdir($cdir);
+	}
+
+	$cacheinfo->{cdir} = $cdir;
+
+	$cacheinfo->{hash} = Crypt::Digest::SHA256->new();
+}
