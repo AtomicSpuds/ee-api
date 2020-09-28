@@ -36,27 +36,25 @@ my $line;
 my $sheet = { };
 foreach my $l (split(/^/,$csv)) {
 	chomp($line=$l);
-	if ($count++ == 0) {
-		(@names) = split(/,/,$line);
+	if ($line =~ /^URL: http/) {
 		next;
 	}
-	(@data) = split(/,/,$line);
-	my $dcount = 0;
-	while (defined($names[$dcount])) {
-		my $n = $names[$dcount];
-		my $v = $data[$dcount];
-		push @{$sheet->{$n}}, $v;
+	if ($count++ == 0) {
+		#printf STDERR "1st line: '%s'\n",$line;
+		(@names) = split(/,/,$line);
+		my $ncount = 0;
+		foreach my $n (@names) {
+			#printf STDERR "title '%s' = %d\n",$n,$ncount;
+			$sheet->{title}->{$n} = $ncount++;
+		}
+		next;
 	}
-}
-
-my $icount = 0;
-foreach my $id (@{$sheet->{item_id}}) {
-	my $iname = ${$sheet->{name}}[$icount];
+	#printf STDERR "Processing line %d '%s'\n", $count, $line;
+	@data = split(/,/,$line);
+	my $idoff= $sheet->{title}->{item_id};
+	my $id = $data[$idoff];
 	printf STDERR "${apiurl}/%s\n",$id;
-	$icount++;
 }
-	
-#get_data("${apiurl}/10100000101");
 
 1;
 
@@ -74,9 +72,14 @@ sub get_data {
 	}
 
 	$ret = "URL: ${url}\n";
+
+	my $line;
 	open(D, "ftp -o - '${url}'|");
 	while(<D>) {
-		$ret .= $_;
+		chomp($line = $_);
+		$line =~ s/\xef\xbb\xbf//g;
+		$line =~ s/\x0d//g; # THE carriage return char
+		$ret .= "$line\n";
 	}
 	close(D);
 
