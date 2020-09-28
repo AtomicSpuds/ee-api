@@ -25,6 +25,8 @@ getopt('v');
 
 our $cacheinfo = { };
 
+our $lastfetch = 0;
+
 my $apiurl = "https://api.eve-echoes-market.com/market-stats";
 
 my $csv = get_data("${apiurl}/stats.csv");
@@ -54,6 +56,7 @@ foreach my $l (split(/^/,$csv)) {
 	my $idoff= $sheet->{title}->{item_id};
 	my $id = $data[$idoff];
 	printf STDERR "${apiurl}/%s\n",$id;
+	get_data("${apiurl}/$id");
 }
 
 1;
@@ -70,6 +73,13 @@ sub get_data {
 	if (defined($ret)) {
 		return $ret;
 	}
+
+	# be gentle, don't spam, 3s delay ought to be kind enough
+	my $delay=3;
+	while ( ($lastfetch+$delay) > time() ) {
+		sleep(1);
+	}
+	$lastfetch = time();
 
 	$ret = "URL: ${url}\n";
 
