@@ -20,6 +20,9 @@ use warnings;
 use Getopt::Std;
 use JSON;
 
+STDERR->autoflush(1);
+STDOUT->autoflush(1);
+
 our $opt_v = 0;
 
 getopt('v');
@@ -66,6 +69,10 @@ foreach my $l (split(/^/,$csv)) {
 	if ($@) {
 		printf STDERR "json->decode() Error: %s\n", $@;
 		next;
+	}
+
+	if ($opt_v>0) {
+		print $json->pretty->encode( $parsed );
 	}
 }
 
