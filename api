@@ -18,18 +18,22 @@ use strict;
 use warnings;
 
 use Getopt::Std;
+use JSON;
 
 our $opt_v = 0;
 
 getopt('v');
 
 our $cacheinfo = { };
+our $json = JSON->new->allow_nonref;
 
 our $lastfetch = 0;
 
 my $apiurl = "https://api.eve-echoes-market.com/market-stats";
 
-my $csv = get_data("${apiurl}/stats.csv");
+my $ri = get_data("${apiurl}/stats.csv");
+
+my $csv = $ri->{data};
 
 my $count = 0;
 my @names;
@@ -38,9 +42,6 @@ my $line;
 my $sheet = { };
 foreach my $l (split(/^/,$csv)) {
 	chomp($line=$l);
-	if ($line =~ /^URL: http/) {
-		next;
-	}
 	if ($count++ == 0) {
 		#printf STDERR "1st line: '%s'\n",$line;
 		(@names) = split(/,/,$line);
@@ -56,7 +57,16 @@ foreach my $l (split(/^/,$csv)) {
 	my $idoff= $sheet->{title}->{item_id};
 	my $id = $data[$idoff];
 	printf STDERR "${apiurl}/%s\n",$id;
-	get_data("${apiurl}/$id");
+	my $ri = get_data("${apiurl}/$id");
+
+	my $parsed;
+	eval {
+		$parsed = $json->decode( $ri->{data} );
+	};
+	if ($@) {
+		printf STDERR "json->decode() Error: %s\n", $@;
+		next;
+	}
 }
 
 1;
@@ -68,10 +78,10 @@ sub get_data {
 
 	$ci->{key} = "$url";
 
-	my $ret = cache($ci);
+	my $ri = cache($ci);
 
-	if (defined($ret)) {
-		return $ret;
+	if (defined($ri)) {
+		return $ri;
 	}
 
 	# be gentle, don't spam, 3s delay ought to be kind enough
@@ -81,7 +91,7 @@ sub get_data {
 	}
 	$lastfetch = time();
 
-	$ret = "URL: ${url}\n";
+	$ci->{data} = "";
 
 	my $line;
 	open(D, "ftp -o - '${url}'|");
@@ -89,41 +99,41 @@ sub get_data {
 		chomp($line = $_);
 		$line =~ s/\xef\xbb\xbf//g;
 		$line =~ s/\x0d//g; # THE carriage return char
-		$ret .= "$line\n";
+		$ci->{data} .= "$line\n";
 	}
 	close(D);
 
-	$ci->{val} = $ret;
-
-	cache($ci);
-
-	return $ret;
+	return cache($ci);
 }
 
 # XXX sync with git/sw/mm/mm and eventually break out to an api class
 
-# cache($cbits)
+# cache($ciits)
 #
-#  my $cbits = { };
-#  $cbits->{key} = "unique lookup key";
-#  $cbits->{val} = $data;
-#  $cbits->{ttl} = 86000; # seconds till cache entry expires
+#  my $ciits = { };
+#  $ciits->{key} = "unique lookup key";
+#  $ciits->{data} = $data;
+#  $ciits->{ttl} = 86000; # seconds till cache entry expires
 
 sub cache {
-	my ($cb) = @_;
+	my ($ci) = @_;
 
 	if (!defined($cacheinfo->{hash})) {
 		cache_setup();
 	}
 
-	my $cdir = $cacheinfo->{cdir};
+	my $ri = { };
 
-	my $key = $cb->{key};
+	my $key = $ci->{key};
 	my $hash = cache_str2hash($key);
 
-	if (!defined($cb->{val})) {
+	my $cdir = $cacheinfo->{cdir};
+	my $hfile = "$cdir/$hash";
+	my $mdfile = "${hfile}.md";
+
+	if (!defined($ci->{data})) {
 		if ($opt_v > 0) {
-			print STDERR "cache read: ".$cb->{key}." from $hash\n";
+			print STDERR "cache read: ".$ci->{key}." from $hash\n";
 		}
 
 		if (! -f "$cdir/$hash") {
@@ -133,33 +143,54 @@ sub cache {
 			return undef;
 		}
 
-		my $data = "";
+
+		if (-f $mdfile) {
+			open(M,"<",$mdfile);
+			while(<M>) {
+				chomp($ri->{key} = $_);
+			}
+			close(M);
+		}
+		if (!defined($ri->{key})) {
+			$ri->{key} = $ci->{key};
+		}
+	
+		$ri->{data} = "";
 		open(H,"xz -d < $cdir/$hash|");
 		while(<H>) {
-			$data .= $_;
+			$ri->{data} .= $_;
 		}
 		close(H);
 		if ($opt_v > 0) {
-			printf STDERR "cache read: %d bytes\n", length($data);
+			printf STDERR "cache read: %d bytes\n", length($ri->{data});
 		}
-		return $data;
+		return $ri;
 	}
 
 	if ($opt_v > 0) {
-		print STDERR "cache write: ".$cb->{key}." to $hash\n";
+		print STDERR "cache write: ".$ci->{key}." to $hash\n";
 	}
 
+	# XXX temp for M, check for errors
+	open(M, ">", ${mdfile});
+	print M $ci->{key}."\n";
+	close(M);
+
 	open(H,"|xz -9e>$cdir/.${hash}");
-	print H $cb->{val};
+	print H $ci->{data};
 	close(H);
 
 	rename("$cdir/.${hash}", "$cdir/$hash");
 
 	if ($opt_v > 0) {
-		printf STDERR "cache write: %d bytes\n", length($cb->{val});
+		printf STDERR "cache write: %d bytes\n", length($ci->{data});
 	}
 
-	return;
+	$ri = { };
+	$ri->{key} = $ci->{key};
+	$ri->{data} = $ci->{data};
+
+	return $ri;
 }
 
 sub cache_str2hash {
