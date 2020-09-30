@@ -44,6 +44,9 @@ my @names;
 my @data;
 my $line;
 my $sheet = { };
+my $maxval = 0;
+my $maxid;
+my $maxname;
 foreach my $l (split(/^/,$csv)) {
 	chomp($line=$l);
 	if ($count++ == 0) {
@@ -75,21 +78,53 @@ foreach my $l (split(/^/,$csv)) {
 	if ($opt_v>0) {
 		#print $json->pretty->encode( $parsed );
 	}
-		printf "    ID         Time       Low   Sell      Buy    High\n";
-		#      "10200000104 1599566400  500000 1000000   73500  300000
+		printf "    ID         Time       Low   Sell      Buy    High   Volume\n";
+		#      "10200000104 1599566400  500000 1000000   73500  300000   3.2
+
 		foreach my $d (@{$parsed}) {
-			printf "%d %10d %7d %7d %7d %7d\n",
+			my $nd = { };
+
+			foreach my $k (keys %{$d}) {
+				if (!defined($d->{$k})) {
+					#printf "d->{$k} is undefined?\n";
+					$nd->{$k} = "null";
+					next;
+				}
+				if ($d->{$k} eq "null") {
+					$nd->{$k} = "null";
+					next;
+				}
+				if ($k =~ /time/) {
+					$nd->{$k} = $d->{$k};
+					next;
+				}
+				if ($k =~ /(buy|sell)/) {
+					if ($d->{$k} > $maxval) {
+						$maxval = $d->{$k};
+						$maxid  = $id;
+						$maxname = $data[$sheet->{title}->{name}];
+					}
+					$nd->{$k} = $d->{$k};
+					next;
+				}
+				$nd->{$k} = sprintf("%7.2f",$d->{$k});
+			}
+				
+			printf "%d %10s %11s %11s %11s %11s %6s\n",
 				$id,
-				$d->{time},
-				$d->{lowest_sell},
-				$d->{sell},
-				$d->{buy},
-				$d->{highest_buy};
+				$nd->{time},
+				$nd->{lowest_sell},
+				$nd->{sell},
+				$nd->{buy},
+				$nd->{highest_buy},
+				$nd->{volume};
 			#print Dumper($d);
 			#exit(0);
 		}
+
 		#exit(0);
 }
+printf "Bonus info.. max val was a %s, value %s, id %d\n", $maxname, $maxval, $maxid;
 
 1;
 
