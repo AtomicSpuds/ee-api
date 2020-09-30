@@ -17,6 +17,7 @@
 use strict;
 use warnings;
 
+use Data::Dumper;
 use Getopt::Std;
 use JSON;
 
@@ -72,8 +73,22 @@ foreach my $l (split(/^/,$csv)) {
 	}
 
 	if ($opt_v>0) {
-		print $json->pretty->encode( $parsed );
+		#print $json->pretty->encode( $parsed );
 	}
+		printf "    ID         Time       Low   Sell      Buy    High\n";
+		#      "10200000104 1599566400  500000 1000000   73500  300000
+		foreach my $d (@{$parsed}) {
+			printf "%d %10d %7d %7d %7d %7d\n",
+				$id,
+				$d->{time},
+				$d->{lowest_sell},
+				$d->{sell},
+				$d->{buy},
+				$d->{highest_buy};
+			#print Dumper($d);
+			#exit(0);
+		}
+		#exit(0);
 }
 
 1;
