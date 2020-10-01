@@ -25,8 +25,9 @@ STDERR->autoflush(1);
 STDOUT->autoflush(1);
 
 our $opt_v = 0;
+our $opt_s;
 
-getopt('v');
+getopt('s:v');
 
 our $cacheinfo = { };
 our $json = JSON->new->allow_nonref;
@@ -63,6 +64,15 @@ foreach my $l (split(/^/,$csv)) {
 	@data = split(/,/,$line);
 	my $idoff= $sheet->{title}->{item_id};
 	my $id = $data[$idoff];
+	my $nameoff = $sheet->{title}->{name};
+	my $name = $data[$nameoff];
+
+	if (defined($opt_s)) {
+		if (! ($name =~ /$opt_s/)) {
+			next;
+		}
+	}
+			
 	printf STDERR "${apiurl}/%s\n",$id;
 	my $ri = get_data("${apiurl}/$id");
 
@@ -81,7 +91,7 @@ foreach my $l (split(/^/,$csv)) {
 		printf "    ID         Time       Low   Sell      Buy    High   Volume\n";
 		#      "10200000104 1599566400  500000 1000000   73500  300000   3.2
 
-		foreach my $d (@{$parsed}) {
+		foreach my $d (sort { $b->{time} <=> $a->{time} } @{$parsed}) {
 			my $nd = { };
 
 			foreach my $k (keys %{$d}) {
@@ -102,7 +112,7 @@ foreach my $l (split(/^/,$csv)) {
 					if ($d->{$k} > $maxval) {
 						$maxval = $d->{$k};
 						$maxid  = $id;
-						$maxname = $data[$sheet->{title}->{name}];
+						$maxname = $name;
 					}
 					$nd->{$k} = $d->{$k};
 					next;
