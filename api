@@ -17,7 +17,9 @@
 use strict;
 use warnings;
 
+use Config::Tiny;
 use Data::Dumper;
+use DBI;
 use Getopt::Std;
 use JSON;
 
@@ -26,11 +28,45 @@ STDOUT->autoflush(1);
 
 our $opt_v = 0;
 our $opt_s;
+our $opt_c;
+our $opt_d;
 
-getopt('s:v');
+$opt_c = $ENV{'HOME'}."/.ee-api.conf";
+
+getopt('c:d:s:v');
 
 our $cacheinfo = { };
 our $json = JSON->new->allow_nonref;
+
+if (! -f $opt_c) {
+	die "config file '$opt_c' does not exist";
+}
+
+our $config = Config::Tiny->read( $opt_c );
+
+my $driver = $opt_d;
+my $db;
+my $user;
+my $pass;
+if (defined($config->{_}->{sql})) {
+	my $sc = $config->{_}->{sql};
+	$driver = $sc->{driver};
+	$user = $sc->{user};
+	$pass = $sc->{pass};
+	$db = $sc->{db};
+	my $class = "DBD::${driver}";
+	eval {
+		require $class;
+	};
+	if ($@) {
+		print "Error loading $class .. $@\n";
+		exit(1);
+	}
+}
+
+if (defined($driver)) {
+	my $dbh = DBI->connect("dbi:${driver}:dbname=$db",$user,$pass, {AutoCommit => 0});
+}
 
 our $lastfetch = 0;
 
