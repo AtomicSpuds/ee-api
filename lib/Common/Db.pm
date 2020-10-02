@@ -61,7 +61,7 @@ sub init_db {
 	my $db = $sc->{db};
 
 	my $class = "DBD::${driver}";
-	#print "init_db: about to load $class\n";
+	print "init_db: about to load $class\n";
 	if ($driver eq "Pg") {
 		eval {
 			load $class, ':pg_types';
@@ -75,7 +75,7 @@ sub init_db {
 		print "Error loading $class .. $@\n";
 		exit(1);
 	}
-	#print "init_db: past loading $class\n";
+	print "init_db: past loading $class\n";
 	
 	if (!defined($dbh)) {
 		eval {
@@ -94,7 +94,6 @@ sub init_db {
 			print STDERR "DBI->connect failed, returned undef\n";
 			exit(1);
 		}
-		exit(0);
 	}
 
 	my $dbmsname = $dbh->get_info( $GetInfoType{SQL_DBMS_NAME} );
