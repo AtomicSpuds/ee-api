@@ -34,8 +34,8 @@ has config => ( is => 'ro' );
 
 sub init {
 	my $me = shift;
-	print "init in a ".ref($me)." package\n";
-	print "me->config is a ".ref($me->config)."\n";
+	#print "init in a ".ref($me)." package\n";
+	#print "me->config is a ".ref($me->config)."\n";
 
 	if (!defined($me->{dbh})) {
 		$me->init_db;
@@ -61,7 +61,7 @@ sub init_db {
 	my $db = $sc->{db};
 
 	my $class = "DBD::${driver}";
-	print "init_db: about to load $class\n";
+	#print "init_db: about to load $class\n";
 	if ($driver eq "Pg") {
 		eval {
 			load $class, ':pg_types';
@@ -75,7 +75,7 @@ sub init_db {
 		print "Error loading $class .. $@\n";
 		exit(1);
 	}
-	print "init_db: past loading $class\n";
+	#print "init_db: past loading $class\n";
 	
 	if (!defined($dbh)) {
 		eval {
@@ -222,6 +222,22 @@ sub cached_execute {
 		return $ret;
 	}
 	return $ret;
+}
+
+sub get_dbsz {
+	my ($me) = @_;
+	my $ret = $me->cached_execute($me->{dbinfo}->{get_dbsz});
+	if (defined($ret->{errstr})) {
+		print STDERR "WARNING: ".$ret->{errstr}."\n";
+		return -1;
+	}
+	my (@ret) = $ret->{sth}->fetchrow_array;
+	$ret->{sth}->finish;
+	if ($#ret < 0 || !defined($ret[0])) {
+		print STDERR "WARNING: no dbsz result\n";
+		return -1;
+	}
+	return $ret[0];
 }
 
 1;

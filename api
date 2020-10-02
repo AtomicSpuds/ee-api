@@ -53,8 +53,9 @@ my $cdb = Common::Db->new(
 	'config' => $config,
 );
 $cdb->init;
-#exit(0);
-print "Made it past init\n";
+#print "Made it past init\n";
+
+print "Database size is ".$cdb->get_dbsz."\n";
 
 our $lastfetch = 0;
 
@@ -98,7 +99,7 @@ foreach my $l (split(/^/,$csv)) {
 		}
 	}
 			
-	printf STDERR "${apiurl}/%s\n",$id;
+	printf STDERR "${apiurl}/%s - %s\n",$id,$name;
 	my $ri = get_data("${apiurl}/$id");
 
 	my $parsed;
@@ -315,7 +316,9 @@ sub cache_setup {
 
 sub save_name {
 	my ($cdb, $id, $name) = @_;
-	printf STDERR "save_name: id=%s name=%s\n",$id,$name;
+	if ($opt_v>0) {
+		printf STDERR "save_name: id=%s name=%s\n",$id,$name;
+	}
 
 	my $dbh = $cdb->getdbh;
 	my $q = "SELECT id from ee_api_names where id=?";
