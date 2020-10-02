@@ -19,9 +19,11 @@ use warnings;
 
 use Config::Tiny;
 use Data::Dumper;
-use DBI;
+use DBI qw(:sql_types);
 use Getopt::Std;
 use JSON;
+
+use Common::Db;
 
 STDERR->autoflush(1);
 STDOUT->autoflush(1);
@@ -29,14 +31,14 @@ STDOUT->autoflush(1);
 our $opt_v = 0;
 our $opt_s;
 our $opt_c;
-our $opt_d;
 
 $opt_c = $ENV{'HOME'}."/.ee-api.conf";
 
-getopt('c:d:s:v');
+getopt('c:s:v');
 
 our $cacheinfo = { };
 our $json = JSON->new->allow_nonref;
+our $dbh;
 
 if (! -f $opt_c) {
 	die "config file '$opt_c' does not exist";
@@ -44,29 +46,11 @@ if (! -f $opt_c) {
 
 our $config = Config::Tiny->read( $opt_c );
 
-my $driver = $opt_d;
-my $db;
-my $user;
-my $pass;
-if (defined($config->{_}->{sql})) {
-	my $sc = $config->{_}->{sql};
-	$driver = $sc->{driver};
-	$user = $sc->{user};
-	$pass = $sc->{pass};
-	$db = $sc->{db};
-	my $class = "DBD::${driver}";
-	eval {
-		require $class;
-	};
-	if ($@) {
-		print "Error loading $class .. $@\n";
-		exit(1);
-	}
-}
-
-if (defined($driver)) {
-	my $dbh = DBI->connect("dbi:${driver}:dbname=$db",$user,$pass, {AutoCommit => 0});
-}
+my $cdb = Common::Db->new(
+	'config' => $config,
+);
+$cdb->init;
+exit(0);
 
 our $lastfetch = 0;
 
@@ -321,3 +305,4 @@ sub cache_setup {
 
 	$cacheinfo->{hash} = Crypt::Digest::SHA256->new();
 }
+
