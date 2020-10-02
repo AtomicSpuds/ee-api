@@ -101,6 +101,8 @@ foreach my $l (split(/^/,$csv)) {
 	printf STDERR "${apiurl}/%s\n",$id;
 	my $ri = get_data("${apiurl}/$id");
 
+	next;
+
 	my $parsed;
 	eval {
 		$parsed = $json->decode( $ri->{data} );
@@ -158,7 +160,7 @@ foreach my $l (split(/^/,$csv)) {
 		}
 
 		#exit(0);
-	last;
+	#last;
 }
 printf "Bonus info.. max val was a %s, value %s, id %d\n", $maxname, $maxval, $maxid;
 
@@ -321,16 +323,30 @@ sub save_name {
 
 	my $dbh = $cdb->getdbh;
 	my $q = "SELECT id from ee_api_names where id=?";
-	my $sth = $dbh->prepare_cached($q);
-	my $rv = $sth->execute($id);
-	if (!defined($rv)) {
+	my $ret = $cdb->cached_execute($q, $id);
+
+	if (defined($ret->{errstr})) {
+		print "save_name(cdb, $id, $name): SELECT rv is a ".ref($ret->{rv})." and contains ";
+		print Dumper($ret->{rv})."\n";
+		print "ret: ";
+		print Dumper($ret)."\n";
+		print "...bailing\n";
+		exit(1);
+	}
+	my (@ret) = $ret->{sth}->fetchrow_array;
+	$ret->{sth}->finish;
+	if ($#ret < 0 || !defined($ret[0])) {
 		print "save_name(cdb, $id, $name): id not found\n";
 		$q = "INSERT into ee_api_names (id,name) ";
 		$q   .= " values (?,?)";
-		$sth = $dbh->prepare_cached($q);
-		my $rv = $sth->execute($id,$name);
+		$ret = $cdb->cached_execute($q, $id, $name);
+		if (defined($ret->{errstr})) {
+			print "save_name(cdb, $id, $name): INSERT rv is a ".ref($ret->{rv})." and contains ";
+			print Dumper($ret->{rv})."\n";
+			exit(1);
+		}
 		return;
 	}
-	print "save_name(cdb, $id, $name): rv is a ".ref($rv)." and contains ";
-	print Dumper($rv)."\n";
+	#print "save_name(cdb, $id, $name): rv is a ".ref($rv)." and contains ";
+	#print Dumper($rv)."\n";
 }

@@ -202,6 +202,28 @@ sub getdbh {
 	return $me->{dbh};
 }
 
+sub cached_execute {
+	my ($me, $q, @values) = @_;
+
+	my $ret = { };
+
+	eval {
+		$ret->{sth} = $me->{dbh}->prepare_cached($q);
+	};
+	if ($@) {
+		$ret->{errstr} = $@;
+		return $ret;
+	}
+	eval {
+		$ret->{rv} = $ret->{sth}->execute(@values);
+	};
+	if ($@) {
+		$ret->{errstr} = $@;
+		return $ret;
+	}
+	return $ret;
+}
+
 1;
 
 
