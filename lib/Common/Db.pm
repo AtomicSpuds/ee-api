@@ -185,8 +185,6 @@ sub init_db {
 		my $rv = $dbh->do($q);
 		$me->mkidx('ee_api_data_time','ee_api_data','tradetime');
 	}
-	print "Pausing 30s...\n";
-	sleep(30);
 }
 
 sub mkidx {
@@ -198,6 +196,11 @@ sub mkidx {
 	$q =~ s/%PARAMS%/$params/;
 	my $rv = $me->{dbh}->do($q);
 	printf STDERR "dbh->do(%s) returned a %s ('%s')\n", $q, ref($rv), Dumper($rv);
+}
+
+sub getdbh {
+	my ($me) = @_;
+	return $me->{dbh};
 }
 
 1;
