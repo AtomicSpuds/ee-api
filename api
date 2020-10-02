@@ -19,7 +19,6 @@ use warnings;
 
 use Config::Tiny;
 use Data::Dumper;
-use DBI qw(:sql_types);
 use Getopt::Std;
 use JSON;
 
