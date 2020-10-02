@@ -21,6 +21,7 @@ use Config::Tiny;
 use Data::Dumper;
 use Getopt::Std;
 use JSON;
+use POSIX qw{strftime};
 
 use Common::Db;
 
@@ -41,7 +42,6 @@ if (!defined($opt_v)) {
 
 our $cacheinfo = { };
 our $json = JSON->new->allow_nonref;
-our $dbh;
 
 if (! -f $opt_c) {
 	die "config file '$opt_c' does not exist";
@@ -55,7 +55,6 @@ my $cdb = Common::Db->new(
 $cdb->init;
 #print "Made it past init\n";
 
-print "Database size is ".$cdb->get_dbsz."\n";
 
 our $lastfetch = 0;
 
@@ -73,6 +72,7 @@ my $sheet = { };
 my $maxval = 0;
 my $maxid;
 my $maxname;
+print "Starting db size is ".$cdb->get_dbsz."\n";
 foreach my $l (split(/^/,$csv)) {
 	chomp($line=$l);
 	if ($count++ == 0) {
@@ -119,17 +119,18 @@ foreach my $l (split(/^/,$csv)) {
 	}
 	#      "10200000104 1599566400  500000 1000000   73500  300000   3.2
 
+	print "Before db size is ".$cdb->get_dbsz." for $name\n";
 	foreach my $d (sort { $b->{time} <=> $a->{time} } @{$parsed}) {
 		my $nd = { };
 
 		foreach my $k (keys %{$d}) {
 			if (!defined($d->{$k})) {
 				#printf "d->{$k} is undefined?\n";
-				$nd->{$k} = "null";
+				$nd->{$k} = "NULL";
 				next;
 			}
 			if ($d->{$k} eq "null") {
-				$nd->{$k} = "null";
+				$nd->{$k} = "NULL";
 				next;
 			}
 			if ($k =~ /time/) {
@@ -157,8 +158,11 @@ foreach my $l (split(/^/,$csv)) {
 				$nd->{highest_buy},
 				$nd->{volume};
 		}
+		save_data($cdb, $id, $nd);
 	}
+	print "After  db size is ".$cdb->get_dbsz." for $name\n\n";
 }
+print "Ending   db size is ".$cdb->get_dbsz."\n";
 printf "Bonus info.. max val was a %s, value %s, id %d\n", $maxname, $maxval, $maxid;
 
 1;
@@ -320,7 +324,6 @@ sub save_name {
 		printf STDERR "save_name: id=%s name=%s\n",$id,$name;
 	}
 
-	my $dbh = $cdb->getdbh;
 	my $q = "SELECT id from ee_api_names where id=?";
 	my $ret = $cdb->cached_execute($q, $id);
 
@@ -335,12 +338,56 @@ sub save_name {
 	my (@ret) = $ret->{sth}->fetchrow_array;
 	$ret->{sth}->finish;
 	if ($#ret < 0 || !defined($ret[0])) {
-		print "save_name(cdb, $id, $name): id not found\n";
+		if ($opt_v>0) {
+			print "save_name(cdb, $id, $name): id not found\n";
+		}
 		$q = "INSERT into ee_api_names (id,name) ";
 		$q   .= " values (?,?)";
 		$ret = $cdb->cached_execute($q, $id, $name);
 		if (defined($ret->{errstr})) {
 			print "save_name(cdb, $id, $name): INSERT rv is a ".ref($ret->{rv})." and contains ";
+			print Dumper($ret->{rv})."\n";
+			exit(1);
+		}
+		return;
+	}
+	#print "save_name(cdb, $id, $name): rv is a ".ref($rv)." and contains ";
+	#print Dumper($rv)."\n";
+}
+sub save_data {
+	my ($cdb, $id, $d) = @_;
+	my $timestr = strftime("%Y-%m-%d %H:%M:%S GMT", gmtime($d->{time}));
+	if ($opt_v>0) {
+		printf STDERR "save_data: id=%s, time=%s\n",$id, $timestr;
+	}
+
+	my $q = "SELECT id from ee_api_data where id=? and tradetime=?";
+	my $ret = $cdb->cached_execute($q, $id, $timestr);
+
+	if (defined($ret->{errstr})) {
+		printf "save_data(cdb, %s, %s): SELECT rv is a ".ref($ret->{rv})." and contains ",$id,$timestr;
+		print Dumper($ret->{rv})."\n";
+		print "ret: ";
+		print Dumper($ret)."\n";
+		print "...bailing\n";
+		exit(1);
+	}
+	my (@ret) = $ret->{sth}->fetchrow_array;
+	$ret->{sth}->finish;
+	if ($#ret < 0 || !defined($ret[0])) {
+		printf "save_data(cdb, %s, %s): id not found\n",$id,$timestr;
+		$q  = "INSERT into ee_api_data";
+		$q .= " (id,tradetime,sell,buy,lowest_sell,highest_buy,volume)";
+		$q .= " values (?,?,?,?,?,?,?)";
+		$ret = $cdb->cached_execute($q, $id,
+				$timestr,
+				$d->{sell},
+				$d->{buy},
+				$d->{lowest_sell},
+				$d->{highest_buy},
+				$d->{volume});
+		if (defined($ret->{errstr})) {
+			printf "save_data(cdb, %s, %s): INSERT rv is a ".ref($ret->{rv})." and contains ",$id,$timestr;
 			print Dumper($ret->{rv})."\n";
 			exit(1);
 		}

@@ -173,12 +173,13 @@ sub init_db {
 	}
 	if (!defined($tablefound{'ee_api_data'})) {
 		my $q = "CREATE TABLE ee_api_data (";
-		$q .= "id bigint UNIQUE, ";
+		$q .= "id bigint, ";
 		$q .= "tradetime timestamp, ";
 		$q .= "sell numeric(15,2), ";
 		$q .= "buy numeric(15,2), ";
 		$q .= "lowest_sell numeric(15,2), ";
 		$q .= "highest_buy numeric(15,2), ";
+		$q .= "volume numeric(15,2), ";
 		$q .= "entered timestamp without time zone default now() ";
 		$q .= ")";
 		my $rv = $dbh->do($q);
@@ -214,8 +215,17 @@ sub cached_execute {
 		$ret->{errstr} = $@;
 		return $ret;
 	}
+	my @input;
+	foreach my $v (@values) {
+		if ($v ne "NULL") {
+			push @input, $v;
+		} else {
+			push @input, undef;
+		}
+	}
+
 	eval {
-		$ret->{rv} = $ret->{sth}->execute(@values);
+		$ret->{rv} = $ret->{sth}->execute(@input);
 	};
 	if ($@) {
 		$ret->{errstr} = $@;
