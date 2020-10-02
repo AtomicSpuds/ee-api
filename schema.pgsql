@@ -29,6 +29,7 @@ CREATE TABLE public.ee_api_data (
     buy numeric(15,2),
     lowest_sell numeric(15,2),
     highest_buy numeric(15,2),
+    volume numeric(15,2),
     entered timestamp without time zone DEFAULT now()
 );
 
@@ -64,14 +65,6 @@ CREATE TABLE public.ee_api_summary (
 
 
 ALTER TABLE public.ee_api_summary OWNER TO ee_api;
-
---
--- Name: ee_api_data ee_api_data_id_key; Type: CONSTRAINT; Schema: public; Owner: ee_api
---
-
-ALTER TABLE ONLY public.ee_api_data
-    ADD CONSTRAINT ee_api_data_id_key UNIQUE (id);
-
 
 --
 -- Name: ee_api_names ee_api_names_id_key; Type: CONSTRAINT; Schema: public; Owner: ee_api
