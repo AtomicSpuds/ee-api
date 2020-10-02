@@ -23,7 +23,7 @@ SET default_tablespace = '';
 --
 
 CREATE TABLE public.ee_api_data (
-    id integer,
+    id bigint,
     tradetime timestamp without time zone,
     sell numeric(15,2),
     buy numeric(15,2),
@@ -40,7 +40,7 @@ ALTER TABLE public.ee_api_data OWNER TO ee_api;
 --
 
 CREATE TABLE public.ee_api_names (
-    id integer,
+    id bigint,
     name character varying,
     created timestamp without time zone DEFAULT now()
 );
@@ -53,7 +53,7 @@ ALTER TABLE public.ee_api_names OWNER TO ee_api;
 --
 
 CREATE TABLE public.ee_api_summary (
-    id integer,
+    id bigint,
     tradetime timestamp without time zone,
     sell numeric(15,2),
     buy numeric(15,2),

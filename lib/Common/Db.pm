@@ -148,7 +148,7 @@ sub init_db {
 
 	if (!defined($tablefound{'ee_api_names'})) {
 		my $q = "CREATE TABLE ee_api_names (";
-		$q .=   "id int UNIQUE, ";
+		$q .=   "id bigint UNIQUE, ";
 		$q .=   "name varchar, ";
 		$q .=   "created timestamp without time zone default now() ";
 		$q .=   ")";
@@ -160,7 +160,7 @@ sub init_db {
 	}
 	if (!defined($tablefound{'ee_api_summary'})) {
 		my $q = "CREATE TABLE ee_api_summary (";
-		$q .=   "id int UNIQUE, ";
+		$q .=   "id bigint UNIQUE, ";
 		$q .=   "tradetime timestamp, ";
 		$q .=   "sell numeric(15,2), ";
 		$q .=   "buy numeric(15,2), ";
@@ -173,7 +173,7 @@ sub init_db {
 	}
 	if (!defined($tablefound{'ee_api_data'})) {
 		my $q = "CREATE TABLE ee_api_data (";
-		$q .= "id int UNIQUE, ";
+		$q .= "id bigint UNIQUE, ";
 		$q .= "tradetime timestamp, ";
 		$q .= "sell numeric(15,2), ";
 		$q .= "buy numeric(15,2), ";
