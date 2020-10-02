@@ -10,7 +10,7 @@ CREATE DATABASE ee WITH OWNER ee_api;
 -- ... connect as ee_api
 --
 CREATE TABLE ee_api_names (
-	id int,
+	id int UNIQUE,
 	name varchar,
 	created timestamp without time zone default now()
 );
@@ -18,7 +18,7 @@ CREATE TABLE ee_api_names (
 -- one entry per id
 
 CREATE TABLE ee_api_summary (
-	id int,
+	id int UNIQUE,
 	tradetime timestamp,
 	sell numeric(15,2),
 	buy numeric(15,2),
@@ -30,7 +30,7 @@ CREATE TABLE ee_api_summary (
 -- many entryes of historic data per id
 
 CREATE TABLE ee_api_data (
-	id int,
+	id int UNIQUE,
 	tradetime timestamp,
 	sell numeric(15,2),
 	buy numeric(15,2),
