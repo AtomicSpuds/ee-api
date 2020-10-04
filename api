@@ -375,7 +375,9 @@ sub save_data {
 	my (@ret) = $ret->{sth}->fetchrow_array;
 	$ret->{sth}->finish;
 	if ($#ret < 0 || !defined($ret[0])) {
-		printf "save_data(cdb, %s, %s): id not found\n",$id,$timestr;
+		if ($opt_v > 0) {
+			printf "save_data(cdb, %s, %s): id not found\n",$id,$timestr;
+		}
 		$q  = "INSERT into ee_api_data";
 		$q .= " (id,tradetime,sell,buy,lowest_sell,highest_buy,volume)";
 		$q .= " values (?,?,?,?,?,?,?)";
