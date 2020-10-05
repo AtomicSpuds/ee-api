@@ -165,8 +165,6 @@ foreach my $l (split(/^/,$csv)) {
 print "Ending   db size is ".$cdb->get_dbsz."\n";
 printf "Bonus info.. max val was a %s, value %s, id %d\n", $maxname, $maxval, $maxid;
 
-1;
-
 sub get_data {
 	my ($url) = @_;
 
@@ -398,3 +396,48 @@ sub save_data {
 	#print "save_name(cdb, $id, $name): rv is a ".ref($rv)." and contains ";
 	#print Dumper($rv)."\n";
 }
+
+1;
+
+package API::WWW;
+
+use strict;
+use warnings;
+
+use LWP::UserAgent;
+
+use HTTP::Request;
+
+sub new {
+	my ($class, $type) = @_;
+
+	my $me = { };
+
+	$me->{ua} = LWP::UserAgent->new();
+
+	$me->{ua}->agent( "Eve Echoes API Archiver/0.0 " . $me->{ua}->agent() );
+	$me->{ua}->env_proxy(1);
+	$me->{ua}->timeout(60);
+
+	my $cookies = $ENV{'http_cookies'};
+	if (defined($cookies)) {
+        	if (-f $cookies) {
+			$me->{ua}->cookie_jar(HTTP::Cookies::Netscape->new(file => $cookies));
+			printf STDERR "Set cookies to %s",$cookies;
+		}
+	}
+
+	bless $me,$class;
+}
+
+sub get {
+	my ($me, $URL) = @_;
+
+	my $req = HTTP::Request->new(GET => $URL);
+
+	my $res = $me->{ua}->request( $req );
+
+	return $res->content;
+}
+
+1;
