@@ -42,6 +42,7 @@ if (!defined($opt_v)) {
 
 our $cacheinfo = { };
 our $json = JSON->new->allow_nonref;
+our $www = API::WWW->new();
 
 if (! -f $opt_c) {
 	die "config file '$opt_c' does not exist";
@@ -188,14 +189,13 @@ sub get_data {
 	$ci->{data} = "";
 
 	my $line;
-	open(D, "ftp -o - '${url}'|");
-	while(<D>) {
-		chomp($line = $_);
+	my $data = $www->get($url);
+	foreach my $l (split(/^/,$data)) {
+		chomp($line = $l);
 		$line =~ s/\xef\xbb\xbf//g;
 		$line =~ s/\x0d//g; # THE carriage return char
 		$ci->{data} .= "$line\n";
 	}
-	close(D);
 
 	return cache($ci);
 }
@@ -409,7 +409,7 @@ use LWP::UserAgent;
 use HTTP::Request;
 
 sub new {
-	my ($class, $type) = @_;
+	my ($class) = @_;
 
 	my $me = { };
 
