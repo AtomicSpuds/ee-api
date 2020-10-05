@@ -19,6 +19,7 @@ use warnings;
 
 use Config::Tiny;
 use Data::Dumper;
+use Date::Manip;
 use Getopt::Std;
 use JSON;
 use POSIX qw{strftime};
@@ -61,7 +62,7 @@ our $lastfetch = 0;
 
 my $apiurl = "https://api.eve-echoes-market.com/market-stats";
 
-my $ri = get_data("${apiurl}/stats.csv");
+my $ri = get_data($cdb, "${apiurl}/stats.csv");
 
 my $csv = $ri->{data};
 
@@ -101,7 +102,7 @@ foreach my $l (split(/^/,$csv)) {
 	}
 			
 	printf STDERR "${apiurl}/%s - %s\n",$id,$name;
-	my $ri = get_data("${apiurl}/$id");
+	my $ri = get_data($cdb, "${apiurl}/$id");
 
 	my $parsed;
 	eval {
@@ -167,16 +168,20 @@ print "Ending   db size is ".$cdb->get_dbsz."\n";
 printf "Bonus info.. max val was a %s, value %s, id %d\n", $maxname, $maxval, $maxid;
 
 sub get_data {
-	my ($url) = @_;
+	my ($cdb, $url) = @_;
 
 	my $ci = { };
+	my $xtra = { };
 
 	$ci->{key} = "$url";
 
 	my $ri = cache($ci);
 
-	if (defined($ri)) {
-		return $ri;
+	# only check cache if what we have has the same modification date
+	if (!is_modified($cdb, $url, $xtra)) {
+		if (defined($ri)) {
+			return $ri;
+		}
 	}
 
 	# be gentle, don't spam, 3s delay ought to be kind enough
@@ -189,7 +194,9 @@ sub get_data {
 	$ci->{data} = "";
 
 	my $line;
-	my $data = $www->get($url);
+	my $data;
+
+	$data = $www->get($url);
 	foreach my $l (split(/^/,$data)) {
 		chomp($line = $l);
 		$line =~ s/\xef\xbb\xbf//g;
@@ -197,7 +204,110 @@ sub get_data {
 		$ci->{data} .= "$line\n";
 	}
 
-	return cache($ci);
+	$ri = cache($ci);
+	modified($cdb, $url, $xtra->{res});
+	return $ri;
+}
+
+# is_modified stores info about a url if not seen before and returns yes
+#  otherwise checks if Last-Modified has changed, and returns yes/no appropriately
+
+# XXX future work: expires .. don't query remote if cache exists and hasn't expired?
+
+# see also modified()
+
+sub is_modified {
+	my ($cdb, $url, $xtra) = @_;
+	printf STDERR "is_modified(cdb, $url)...\n";
+	my ($yes,$no) = (1,0);
+
+	my $res = $www->head($url);
+	$xtra->{res} = $res;
+	my $q = "SELECT id,lastmod from ee_api_urlstatus where url=?";
+	my $ret = $cdb->cached_execute($q, $url);
+
+	if (defined($ret->{errstr})) {
+		print "is_modified(cdb, $url): SELECT rv is a ".ref($ret->{rv})." and contains ";
+		print Dumper($ret->{rv})."\n";
+		print "ret: ";
+		print Dumper($ret)."\n";
+		print $ret->{errstr};
+		print "...bailing\n";
+		exit(1);
+	}
+	my (@ret) = $ret->{sth}->fetchrow_array;
+	$ret->{sth}->finish;
+	if ($#ret < 0 || !defined($ret[0])) {
+		if ($opt_v>0) {
+			print "is_modified(cdb, $url): url not found\n";
+		}
+		$q = "INSERT into ee_api_urlstatus (url,contlen,conttype,expires,lastmod,expectct) ";
+		$q   .= " values (?,?,?,?,?,?)";
+		$ret = $cdb->cached_execute($q, $url,
+			$res->header('Content-Length'),
+			$res->header('Content-Type'),
+			$res->header('Expires'),
+			$res->header('Last-Modified'),
+			$res->header('Expect-CT'));
+		if (defined($ret->{errstr})) {
+			print "save_name(cdb, $url): INSERT rv is a ".ref($ret->{rv})." and contains ";
+			print Dumper($ret->{rv})."\n";
+			print $ret->{errstr};
+			exit(1);
+		}
+		return $yes;
+	}
+
+	$xtra->{dbid} = $ret[0];
+
+	if ($opt_v>0) {
+		print STDERR "==> head $url\n";
+		print STDERR "    headers:\n";
+		my @headernames = $res->header_field_names();
+		foreach my $h (@headernames) {
+			printf STDERR "       %s = %s\n",$h,$res->header($h);
+		}
+	}
+
+	printf STDERR "is_modified: header Last-Modified='%s' vs db lastmod='%s'\n",
+		$res->header('Last-Modified'),
+		$ret[1];
+	my $ht = UnixDate($res->header('Last-Modified'),"%s");
+	my $dt = UnixDate($ret[1],"%s");
+
+	printf STDERR "is_modified: header '%s' vs db '%s'\n", $ht, $dt;
+
+	if ($ht == $dt) {
+		return $no;
+	}
+	return $yes;
+}
+
+sub modified {
+	my ($cab, $url, $xtra) = @_;
+
+	my $res = $xtra->{res};
+	my $q = "UPDATE ee_api_urlstatus set contlen=?,conttype=?,expires=?,lastmod=?,expectct=? ";
+	$q   .= " where id = ?";
+
+	if (!defined($xtra->{dbid})) {
+		return;
+	}
+
+	my $ret = $cdb->cached_execute($q,
+		$res->header('Content-Length'),
+		$res->header('Content-Type'),
+		$res->header('Expires'),
+		$res->header('Last-Modified'),
+		$res->header('Expect-CT'),
+		$xtra->{dbid});
+	if (defined($ret->{errstr})) {
+		print "modified(cdb, $url): INSERT rv is a ".ref($ret->{rv})." and contains ";
+		print Dumper($ret->{rv})."\n";
+		print $ret->{errstr};
+		exit(1);
+	}
+
 }
 
 # XXX sync with git/sw/mm/mm and eventually break out to an api class
@@ -404,9 +514,9 @@ package API::WWW;
 use strict;
 use warnings;
 
-use LWP::UserAgent;
-
+use Data::Dumper;
 use HTTP::Request;
+use LWP::UserAgent;
 
 sub new {
 	my ($class) = @_;
@@ -438,6 +548,16 @@ sub get {
 	my $res = $me->{ua}->request( $req );
 
 	return $res->content;
+}
+
+sub head {
+	my ($me, $URL) = @_;
+
+	my $req = HTTP::Request->new(HEAD => $URL);
+
+	my $res = $me->{ua}->request( $req );
+
+	return $res;
 }
 
 1;

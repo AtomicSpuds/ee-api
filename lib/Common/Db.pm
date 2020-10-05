@@ -137,7 +137,7 @@ sub init_db {
 	my @tables = $dbh->tables();
 	my %tablefound;
 	foreach my $tname (@tables) {
-		foreach my $tn (('ee_api_names','ee_api_summary','ee_api_data')) {
+		foreach my $tn (('ee_api_names','ee_api_summary','ee_api_data','ee_api_urlstatus')) {
 			my $tre = $dbinfo->{tablere};
 			$tre =~ s/%name%/$tn/g;
 			if ($tname =~ m/$tre/) {
@@ -183,8 +183,24 @@ sub init_db {
 		$q .= "entered timestamp without time zone default now() ";
 		$q .= ")";
 		my $rv = $dbh->do($q);
+		$me->mkidx('ee_api_data_id_time','ee_api_data','id,tradetime');
 		$me->mkidx('ee_api_data_time','ee_api_data','tradetime');
 	}
+	if (!defined($tablefound{'ee_api_urlstatus'})) {
+		my $q = "CREATE TABLE ee_api_urlstatus (";
+		$q .= "id ".$dbinfo->{serialtype}.", ";
+		$q .= "url TEXT, ";
+		$q .= "contlen int, ";
+		$q .= "conttype text, ";
+		$q .= "expires timestamp, ";
+		$q .= "lastmod timestamp with time zone, ";
+		$q .= "expectct text, ";
+		$q .= "crated timestamp with time zone default now() ";
+		$q .= ")";
+		my $rv = $dbh->do($q);
+		$me->mkidx('ee_api_url_url', 'ee_api_urlstatus', 'url');
+	}
+		
 }
 
 sub mkidx {
