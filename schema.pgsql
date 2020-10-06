@@ -67,6 +67,53 @@ CREATE TABLE public.ee_api_summary (
 ALTER TABLE public.ee_api_summary OWNER TO ee_api;
 
 --
+-- Name: ee_api_urlstatus; Type: TABLE; Schema: public; Owner: ee_api
+--
+
+CREATE TABLE public.ee_api_urlstatus (
+    id integer NOT NULL,
+    url text,
+    contlen integer,
+    conttype text,
+    expires timestamp without time zone,
+    lastmod timestamp with time zone,
+    expectct text,
+    crated timestamp with time zone DEFAULT now()
+);
+
+
+ALTER TABLE public.ee_api_urlstatus OWNER TO ee_api;
+
+--
+-- Name: ee_api_urlstatus_id_seq; Type: SEQUENCE; Schema: public; Owner: ee_api
+--
+
+CREATE SEQUENCE public.ee_api_urlstatus_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.ee_api_urlstatus_id_seq OWNER TO ee_api;
+
+--
+-- Name: ee_api_urlstatus_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: ee_api
+--
+
+ALTER SEQUENCE public.ee_api_urlstatus_id_seq OWNED BY public.ee_api_urlstatus.id;
+
+
+--
+-- Name: ee_api_urlstatus id; Type: DEFAULT; Schema: public; Owner: ee_api
+--
+
+ALTER TABLE ONLY public.ee_api_urlstatus ALTER COLUMN id SET DEFAULT nextval('public.ee_api_urlstatus_id_seq'::regclass);
+
+
+--
 -- Name: ee_api_names ee_api_names_id_key; Type: CONSTRAINT; Schema: public; Owner: ee_api
 --
 
@@ -80,6 +127,14 @@ ALTER TABLE ONLY public.ee_api_names
 
 ALTER TABLE ONLY public.ee_api_summary
     ADD CONSTRAINT ee_api_summary_id_key UNIQUE (id);
+
+
+--
+-- Name: ee_api_urlstatus ee_api_urlstatus_id_key; Type: CONSTRAINT; Schema: public; Owner: ee_api
+--
+
+ALTER TABLE ONLY public.ee_api_urlstatus
+    ADD CONSTRAINT ee_api_urlstatus_id_key UNIQUE (id);
 
 
 --
@@ -101,6 +156,13 @@ CREATE INDEX ee_api_names_nameidx ON public.ee_api_names USING btree (name);
 --
 
 CREATE INDEX ee_api_summary_timeidx ON public.ee_api_summary USING btree (tradetime);
+
+
+--
+-- Name: ee_api_url_url; Type: INDEX; Schema: public; Owner: ee_api
+--
+
+CREATE INDEX ee_api_url_url ON public.ee_api_urlstatus USING btree (url);
 
 
 --
