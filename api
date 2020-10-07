@@ -41,7 +41,7 @@ if (!defined($opt_v)) {
 	$opt_v = 0;
 }
 
-our $cacheinfo = { };
+our $cache = API::Cache->new();
 our $json = JSON->new->allow_nonref;
 our $www = API::WWW->new();
 
@@ -175,7 +175,7 @@ sub get_data {
 
 	$ci->{key} = "$url";
 
-	my $ri = cache($ci);
+	my $ri = $cache->cache($ci);
 
 	# only check cache if what we have has the same modification date
 	if (!is_modified($cdb, $url, $xtra)) {
@@ -204,7 +204,7 @@ sub get_data {
 		$ci->{data} .= "$line\n";
 	}
 
-	$ri = cache($ci);
+	$ri = $cache->cache($ci);
 	modified($cdb, $url, $xtra->{res});
 	return $ri;
 }
@@ -218,7 +218,7 @@ sub get_data {
 
 sub is_modified {
 	my ($cdb, $url, $xtra) = @_;
-	printf STDERR "is_modified(cdb, $url)...\n";
+	#printf STDERR "is_modified(cdb, $url)...\n";
 	my ($yes,$no) = (1,0);
 
 	my $res = $www->head($url);
@@ -227,7 +227,7 @@ sub is_modified {
 	my $ret = $cdb->cached_execute($q, $url);
 
 	if (defined($ret->{errstr})) {
-		print "is_modified(cdb, $url): SELECT rv is a ".ref($ret->{rv})." and contains ";
+		#print "is_modified(cdb, $url): SELECT rv is a ".ref($ret->{rv})." and contains ";
 		print Dumper($ret->{rv})."\n";
 		print "ret: ";
 		print Dumper($ret)."\n";
@@ -239,7 +239,7 @@ sub is_modified {
 	$ret->{sth}->finish;
 	if ($#ret < 0 || !defined($ret[0])) {
 		if ($opt_v>0) {
-			print "is_modified(cdb, $url): url not found\n";
+			#print "is_modified(cdb, $url): url not found\n";
 		}
 		$q = "INSERT into ee_api_urlstatus (url,contlen,conttype,expires,lastmod,expectct) ";
 		$q   .= " values (?,?,?,?,?,?)";
@@ -308,119 +308,6 @@ sub modified {
 		exit(1);
 	}
 
-}
-
-# XXX sync with git/sw/mm/mm and eventually break out to an api class
-
-# cache($ciits)
-#
-#  my $ciits = { };
-#  $ciits->{key} = "unique lookup key";
-#  $ciits->{data} = $data;
-#  $ciits->{ttl} = 86000; # seconds till cache entry expires
-
-sub cache {
-	my ($ci) = @_;
-
-	if (!defined($cacheinfo->{hash})) {
-		cache_setup();
-	}
-
-	my $ri = { };
-
-	my $key = $ci->{key};
-	my $hash = cache_str2hash($key);
-
-	my $cdir = $cacheinfo->{cdir};
-	my $hfile = "$cdir/$hash";
-	my $mdfile = "${hfile}.md";
-
-	if (!defined($ci->{data})) {
-		if ($opt_v > 0) {
-			print STDERR "cache read: ".$ci->{key}." from $hash\n";
-		}
-
-		if (! -f "$cdir/$hash") {
-			if ($opt_v > 0) {
-				print STDERR "cache read: ENOTFOUND\n";
-			}
-			return undef;
-		}
-
-
-		if (-f $mdfile) {
-			open(M,"<",$mdfile);
-			while(<M>) {
-				chomp($ri->{key} = $_);
-			}
-			close(M);
-		}
-		if (!defined($ri->{key})) {
-			$ri->{key} = $ci->{key};
-		}
-	
-		$ri->{data} = "";
-		open(H,"xz -d < $cdir/$hash|");
-		while(<H>) {
-			$ri->{data} .= $_;
-		}
-		close(H);
-		if ($opt_v > 0) {
-			printf STDERR "cache read: %d bytes\n", length($ri->{data});
-		}
-		return $ri;
-	}
-
-	if ($opt_v > 0) {
-		print STDERR "cache write: ".$ci->{key}." to $hash\n";
-	}
-
-	# XXX temp for M, check for errors
-	open(M, ">", ${mdfile});
-	print M $ci->{key}."\n";
-	close(M);
-
-	open(H,"|xz -9e>$cdir/.${hash}");
-	print H $ci->{data};
-	close(H);
-
-	rename("$cdir/.${hash}", "$cdir/$hash");
-
-	if ($opt_v > 0) {
-		printf STDERR "cache write: %d bytes\n", length($ci->{data});
-	}
-
-	$ri = { };
-	$ri->{key} = $ci->{key};
-	$ri->{data} = $ci->{data};
-
-	return $ri;
-}
-
-sub cache_str2hash {
-	my ($str) = @_;
-
-	$cacheinfo->{hash}->add($str);
-	my $res = $cacheinfo->{hash}->hexdigest;
-	$cacheinfo->{hash}->reset;
-	return $res;
-}
-
-sub cache_setup {
-	use Crypt::Digest::SHA256;
-
-	my $HOME=$ENV{'HOME'};
-	my $cdir = "${HOME}/.cache/ee-api";
-	if (! -d "${HOME}/.cache") {
-		mkdir("${HOME}/.cache") || die
-	}
-	if (! -d $cdir) {
-		mkdir($cdir);
-	}
-
-	$cacheinfo->{cdir} = $cdir;
-
-	$cacheinfo->{hash} = Crypt::Digest::SHA256->new();
 }
 
 
@@ -558,6 +445,138 @@ sub head {
 	my $res = $me->{ua}->request( $req );
 
 	return $res;
+}
+
+1;
+
+package API::Cache;
+
+use strict;
+use warnings;
+
+sub new {
+	my ($class) = @_;
+
+	my $me = { };
+
+	my $ret = bless $me, $class;
+
+	$me->cache_setup();
+
+	return $ret;
+}
+
+
+# XXX sync with git/sw/mm/mm
+
+# cache($ciits)
+#
+#  my $ciits = { };
+#  $ciits->{key} = "unique lookup key";
+#  $ciits->{data} = $data;
+#  $ciits->{ttl} = 86000; # seconds till cache entry expires
+
+sub cache {
+	my ($me, $ci) = @_;
+
+	my $ri = { };
+
+	my $key = $ci->{key};
+	my $hash = $me->cache_str2hash($key);
+
+	my $cdir = $me->{cdir};
+	my $hfile = "$cdir/$hash";
+	my $mdfile = "${hfile}.md";
+
+	if (!defined($ci->{data})) {
+		if ($opt_v > 0) {
+			print STDERR "cache read: ".$ci->{key}." from $hash\n";
+		}
+
+		if (! -f "$cdir/$hash") {
+			if ($opt_v > 0) {
+				print STDERR "cache read: ENOTFOUND\n";
+			}
+			return undef;
+		}
+
+
+		if (-f $mdfile) {
+			open(M,"<",$mdfile);
+			while(<M>) {
+				chomp($ri->{key} = $_);
+			}
+			close(M);
+		}
+		if (!defined($ri->{key})) {
+			$ri->{key} = $ci->{key};
+		}
+	
+		$ri->{data} = "";
+		open(H,"xz -d < $cdir/$hash|");
+		while(<H>) {
+			$ri->{data} .= $_;
+		}
+		close(H);
+		if ($opt_v > 0) {
+			printf STDERR "cache read: %d bytes\n", length($ri->{data});
+		}
+		return $ri;
+	}
+
+	if ($opt_v > 0) {
+		print STDERR "cache write: ".$ci->{key}." to $hash\n";
+	}
+
+	# XXX temp for M, check for errors
+	open(M, ">", ${mdfile});
+	print M $ci->{key}."\n";
+	close(M);
+
+	open(H,"|xz -9e>$cdir/.${hash}");
+	print H $ci->{data};
+	close(H);
+
+	rename("$cdir/.${hash}", "$cdir/$hash");
+
+	if ($opt_v > 0) {
+		printf STDERR "cache write: %d bytes\n", length($ci->{data});
+	}
+
+	$ri = { };
+	$ri->{key} = $ci->{key};
+	$ri->{data} = $ci->{data};
+
+	return $ri;
+}
+
+sub cache_str2hash {
+	my ($me, $str) = @_;
+
+	$me->{hash}->add($str);
+	my $res = $me->{hash}->hexdigest;
+	$me->{hash}->reset;
+
+	return $res;
+}
+
+sub cache_setup {
+	my ($me) = @_;
+
+	use Crypt::Digest::SHA256;
+
+	my $HOME=$ENV{'HOME'};
+	my $cdir = "${HOME}/.cache/ee-api";
+	if (! -d "${HOME}/.cache") {
+		mkdir("${HOME}/.cache") || die
+	}
+	if (! -d $cdir) {
+		mkdir($cdir);
+	}
+
+	$me->{cdir} = $cdir;
+
+	$me->{hash} = Crypt::Digest::SHA256->new();
 }
 
 1;
