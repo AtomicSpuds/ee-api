@@ -24,6 +24,8 @@ use Getopt::Std;
 use JSON;
 use POSIX qw{strftime};
 
+use API::Cache;
+use API::WWW;
 use Common::Db;
 
 STDERR->autoflush(1);
@@ -269,13 +271,17 @@ sub is_modified {
 		}
 	}
 
+	if ($opt_v>0) {
 	printf STDERR "is_modified: header Last-Modified='%s' vs db lastmod='%s'\n",
 		$res->header('Last-Modified'),
 		$ret[1];
+	}
 	my $ht = UnixDate($res->header('Last-Modified'),"%s");
 	my $dt = UnixDate($ret[1],"%s");
 
+	if ($opt_v>0) {
 	printf STDERR "is_modified: header '%s' vs db '%s'\n", $ht, $dt;
+	}
 
 	if ($ht == $dt) {
 		return $no;
@@ -392,191 +398,6 @@ sub save_data {
 	}
 	#print "save_name(cdb, $id, $name): rv is a ".ref($rv)." and contains ";
 	#print Dumper($rv)."\n";
-}
-
-1;
-
-package API::WWW;
-
-use strict;
-use warnings;
-
-use Data::Dumper;
-use HTTP::Request;
-use LWP::UserAgent;
-
-sub new {
-	my ($class) = @_;
-
-	my $me = { };
-
-	$me->{ua} = LWP::UserAgent->new();
-
-	$me->{ua}->agent( "Eve Echoes API Archiver/0.0 " . $me->{ua}->agent() );
-	$me->{ua}->env_proxy(1);
-	$me->{ua}->timeout(60);
-
-	my $cookies = $ENV{'http_cookies'};
-	if (defined($cookies)) {
-        	if (-f $cookies) {
-			$me->{ua}->cookie_jar(HTTP::Cookies::Netscape->new(file => $cookies));
-			printf STDERR "Set cookies to %s",$cookies;
-		}
-	}
-
-	bless $me,$class;
-}
-
-sub get {
-	my ($me, $URL) = @_;
-
-	my $req = HTTP::Request->new(GET => $URL);
-
-	my $res = $me->{ua}->request( $req );
-
-	return $res->content;
-}
-
-sub head {
-	my ($me, $URL) = @_;
-
-	my $req = HTTP::Request->new(HEAD => $URL);
-
-	my $res = $me->{ua}->request( $req );
-
-	return $res;
-}
-
-1;
-
-package API::Cache;
-
-use strict;
-use warnings;
-
-sub new {
-	my ($class) = @_;
-
-	my $me = { };
-
-	my $ret = bless $me, $class;
-
-	$me->cache_setup();
-
-	return $ret;
-}
-
-
-# XXX sync with git/sw/mm/mm
-
-# cache($ciits)
-#
-#  my $ciits = { };
-#  $ciits->{key} = "unique lookup key";
-#  $ciits->{data} = $data;
-#  $ciits->{ttl} = 86000; # seconds till cache entry expires
-
-sub cache {
-	my ($me, $ci) = @_;
-
-	my $ri = { };
-
-	my $key = $ci->{key};
-	my $hash = $me->cache_str2hash($key);
-
-	my $cdir = $me->{cdir};
-	my $hfile = "$cdir/$hash";
-	my $mdfile = "${hfile}.md";
-
-	if (!defined($ci->{data})) {
-		if ($opt_v > 0) {
-			print STDERR "cache read: ".$ci->{key}." from $hash\n";
-		}
-
-		if (! -f "$cdir/$hash") {
-			if ($opt_v > 0) {
-				print STDERR "cache read: ENOTFOUND\n";
-			}
-			return undef;
-		}
-
-
-		if (-f $mdfile) {
-			open(M,"<",$mdfile);
-			while(<M>) {
-				chomp($ri->{key} = $_);
-			}
-			close(M);
-		}
-		if (!defined($ri->{key})) {
-			$ri->{key} = $ci->{key};
-		}
-	
-		$ri->{data} = "";
-		open(H,"xz -d < $cdir/$hash|");
-		while(<H>) {
-			$ri->{data} .= $_;
-		}
-		close(H);
-		if ($opt_v > 0) {
-			printf STDERR "cache read: %d bytes\n", length($ri->{data});
-		}
-		return $ri;
-	}
-
-	if ($opt_v > 0) {
-		print STDERR "cache write: ".$ci->{key}." to $hash\n";
-	}
-
-	# XXX temp for M, check for errors
-	open(M, ">", ${mdfile});
-	print M $ci->{key}."\n";
-	close(M);
-
-	open(H,"|xz -9e>$cdir/.${hash}");
-	print H $ci->{data};
-	close(H);
-
-	rename("$cdir/.${hash}", "$cdir/$hash");
-
-	if ($opt_v > 0) {
-		printf STDERR "cache write: %d bytes\n", length($ci->{data});
-	}
-
-	$ri = { };
-	$ri->{key} = $ci->{key};
-	$ri->{data} = $ci->{data};
-
-	return $ri;
-}
-
-sub cache_str2hash {
-	my ($me, $str) = @_;
-
-	$me->{hash}->add($str);
-	my $res = $me->{hash}->hexdigest;
-	$me->{hash}->reset;
-
-	return $res;
-}
-
-sub cache_setup {
-	my ($me) = @_;
-
-	use Crypt::Digest::SHA256;
-
-	my $HOME=$ENV{'HOME'};
-	my $cdir = "${HOME}/.cache/ee-api";
-	if (! -d "${HOME}/.cache") {
-		mkdir("${HOME}/.cache") || die
-	}
-	if (! -d $cdir) {
-		mkdir($cdir);
-	}
-
-	$me->{cdir} = $cdir;
-
-	$me->{hash} = Crypt::Digest::SHA256->new();
 }
 
 1;
