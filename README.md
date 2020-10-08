@@ -9,11 +9,14 @@ Working now:
  - connect to db
  - update db when downloading data
  - convert from open(D,"ftp -o - ${URL}|") to perl native web retrieval
+ - check stat() equivalent on data to see if newer is avail, don't bother retrieving if not
+   ... HEAD and reading 'Last-Modified' header, save, compare with previous check
 
 Note:
- - cache presently does not expire unless manually removed to avoid slamming
-   the api site while developing the code
+ - disk cache only grows, but is updated as HEAD checks show new versions of files is avail
 
 Future work:
  - periodically poll for new data
- - then check stat() equivalent on data to see if newer is avail, don't bother retrieving if not
+ - use perl native compression/decompression
+ - save hash of $res->content .. if seen before, skip processing
+ - only save new hash if completed processing
