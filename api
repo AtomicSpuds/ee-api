@@ -59,6 +59,9 @@ my $cdb = Common::Db->new(
 $cdb->init;
 #print "Made it past init\n";
 
+$cdb->{_stats}->{data}->{insert} = 0;
+$cdb->{_stats}->{name}->{insert} = 0;
+
 
 our $lastfetch = 0;
 
@@ -76,7 +79,7 @@ my $sheet = { };
 my $maxval = 0;
 my $maxid;
 my $maxname;
-print "Starting db size is ".$cdb->get_dbsz."\n";
+my $godbsz = $cdb->get_dbsz;
 foreach my $l (split(/^/,$csv)) {
 	chomp($line=$l);
 	if ($count++ == 0) {
@@ -103,7 +106,7 @@ foreach my $l (split(/^/,$csv)) {
 		}
 	}
 			
-	printf STDERR "${apiurl}/%s - %s\n",$id,$name;
+	printf STDERR "==> %s\n", $name;
 	my $ri = get_data($cdb, "${apiurl}/$id");
 
 	my $parsed;
@@ -116,14 +119,14 @@ foreach my $l (split(/^/,$csv)) {
 	}
 
 	if ($opt_v>0) {
-		#print $json->pretty->encode( $parsed );
-	}
-	if ($opt_v>0) {
+		print $json->pretty->encode( $parsed );
 		printf "    ID         Time       Low   Sell      Buy    High   Volume\n";
 	}
 	#      "10200000104 1599566400  500000 1000000   73500  300000   3.2
 
-	print "Before db size is ".$cdb->get_dbsz." for $name\n";
+	my ($odbsz, $oinscount);
+	$odbsz = $cdb->get_dbsz;
+	$oinscount = $cdb->{_stats}->{data}->{insert};
 	foreach my $d (sort { $b->{time} <=> $a->{time} } @{$parsed}) {
 		my $nd = { };
 
@@ -164,10 +167,29 @@ foreach my $l (split(/^/,$csv)) {
 		}
 		save_data($cdb, $id, $nd);
 	}
-	print "After  db size is ".$cdb->get_dbsz." for $name\n\n";
+	my $ndbsz = $cdb->get_dbsz;
+	if ($ndbsz > $odbsz) {
+		printf "dbsz +%d\n", $ndbsz-$odbsz;
+	}
+	my $ninscount = $cdb->{_stats}->{data}->{insert};
+	if ($ninscount > $oinscount) {
+		printf "inserts +%d\n", $ninscount-$oinscount;
+	}
 }
-print "Ending   db size is ".$cdb->get_dbsz."\n";
-printf "Bonus info.. max val was a %s, value %s, id %d\n", $maxname, $maxval, $maxid;
+my $gndbsz = $cdb->get_dbsz;
+if ($gndbsz > $godbsz) {
+	printf "Global dbsz +%d\n", $gndbsz-$godbsz;
+}
+if ($cdb->{_stats}->{data}->{insert} > 0) {
+	printf "Global data inserts +%d\n", $cdb->{_stats}->{data}->{insert};
+}
+if ($cdb->{_stats}->{name}->{insert} > 0) {
+	printf "Global name inserts +%d\n", $cdb->{_stats}->{name}->{insert};
+}
+	
+if ($opt_v>0) {
+	printf "Bonus info.. max val was a %s, value %s, id %d\n", $maxname, $maxval, $maxid;
+}
 
 sub get_data {
 	my ($cdb, $url) = @_;
@@ -350,6 +372,7 @@ sub save_name {
 			print Dumper($ret->{rv})."\n";
 			exit(1);
 		}
+		$cdb->{_stats}->{name}->{insert}++;
 		return;
 	}
 	#print "save_name(cdb, $id, $name): rv is a ".ref($rv)." and contains ";
@@ -394,6 +417,7 @@ sub save_data {
 			print Dumper($ret->{rv})."\n";
 			exit(1);
 		}
+		$cdb->{_stats}->{data}->{insert}++;
 		return;
 	}
 	#print "save_name(cdb, $id, $name): rv is a ".ref($rv)." and contains ";
