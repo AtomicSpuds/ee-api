@@ -137,7 +137,7 @@ sub init_db {
 	my @tables = $dbh->tables();
 	my %tablefound;
 	foreach my $tname (@tables) {
-		foreach my $tn (('ee_api_names','ee_api_summary','ee_api_data','ee_api_urlstatus')) {
+		foreach my $tn (('ee_api_names','ee_api_summary','ee_api_data','ee_api_urlstatus','ee_api_tags','ee_api_tagem')) {
 			my $tre = $dbinfo->{tablere};
 			$tre =~ s/%name%/$tn/g;
 			if ($tname =~ m/$tre/) {
@@ -155,7 +155,6 @@ sub init_db {
 		#print "$q\n";
 		my $rv = $dbh->do($q);
 		printf STDERR "dbh->do(%s) returned a %s ('%s')\n", $q, ref($rv), Dumper($rv);
-		#$me->mkidx('ee_api_names_ididx', 'ee_api_names', 'id');
 		$me->mkidx('ee_api_names_nameidx', 'ee_api_names', 'name');
 	}
 	if (!defined($tablefound{'ee_api_summary'})) {
@@ -199,6 +198,26 @@ sub init_db {
 		$q .= ")";
 		my $rv = $dbh->do($q);
 		$me->mkidx('ee_api_url_url', 'ee_api_urlstatus', 'url');
+	}
+	if (!defined($tablefound{'ee_api_tags'})) {
+		my $q = "CREATE TABLE ee_api_tags (";
+		$q .= "id ".$dbinfo->{serialtype}.", ";
+		$q .= "tag text, ";
+		$q .= "created timestamp with time zone default now() ";
+		$q .= ")";
+		my $rv = $dbh->do($q);
+		$me->mkidx('ee_api_tags_tag','ee_api_tags','tag');
+	}
+	if (!defined($tablefound{'ee_api_tagem'})) {
+		my $q = "CREATE TABLE ee_api_tagem (";
+		$q .= "id ".$dbinfo->{serialtype}.", ";
+		$q .= "tagid int, ";
+		$q .= "nameid bigint, ";
+		$q .= "created timestamp with time zone default now() ";
+		$q .= ")";
+		my $rv = $dbh->do($q);
+		$me->mkidx('ee_api_tagem_nameid','ee_api_tagem','nameid');
+		$me->mkidx('ee_api_tagem_tagid','ee_api_tagem','tagid');
 	}
 		
 }
@@ -264,6 +283,29 @@ sub get_dbsz {
 		return -1;
 	}
 	return $ret[0];
+}
+
+sub dbdie {
+	my ($me, $ret, $func, $what) = @_;
+
+	print STDERR $func;
+	print STDERR ": ";
+	print STDERR $ret->{errstr};
+	print STDERR "\n";
+	
+	print STDERR $func;
+	print STDERR ": ${what} rv is a ";
+	print STDERR ref($ret->{rv});
+	print STDERR " and contains ";
+	print STDERR Dumper($ret->{rv});
+	print STDERR "\n";
+
+	print STDERR "ret: ";
+	print STDERR Dumper($ret);
+	print STDERR "\n";
+
+	print STDERR "\n   ...goodby cruel world!\n\n";
+	exit(1);
 }
 
 1;
