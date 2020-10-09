@@ -23,6 +23,7 @@ use Date::Manip;
 use Getopt::Std;
 use JSON;
 use POSIX qw{strftime};
+use Sys::Syslog qw(:standard :macros);
 
 use API::Cache;
 use API::WWW;
@@ -43,10 +44,6 @@ if (!defined($opt_v)) {
 	$opt_v = 0;
 }
 
-our $cache = API::Cache->new();
-our $json = JSON->new->allow_nonref;
-our $www = API::WWW->new();
-
 if (! -f $opt_c) {
 	die "config file '$opt_c' does not exist";
 }
@@ -62,6 +59,16 @@ $cdb->init;
 $cdb->{_stats}->{data}->{insert} = 0;
 $cdb->{_stats}->{name}->{insert} = 0;
 
+our $cache = API::Cache->new();
+our $json = JSON->new->allow_nonref;
+our $www = API::WWW->new();
+
+# syslog bits
+my $fac = "daemon";
+our $prio = LOG_INFO;
+my $proc = "ee-api";
+
+openlog($proc, "ndelay", $fac);
 
 our $lastfetch = 0;
 
@@ -168,24 +175,35 @@ foreach my $l (split(/^/,$csv)) {
 		save_data($cdb, $id, $nd);
 	}
 	my $ndbsz = $cdb->get_dbsz;
-	if ($ndbsz > $odbsz) {
-		printf "dbsz +%d\n", $ndbsz-$odbsz;
-	}
 	my $ninscount = $cdb->{_stats}->{data}->{insert};
 	if ($ninscount > $oinscount) {
-		printf "inserts +%d\n", $ninscount-$oinscount;
+		my $change = $ninscount-$oinscount;
+		printf "inserts +%d\n", $change;
+		syslog($prio, "+%d inserts for %s", $change, $name);
+	}
+	if ($ndbsz > $odbsz) {
+		my $change = $ndbsz-$odbsz;
+		printf "dbsz +%d\n", $change;
+		syslog($prio, "+%d db size", $change);
 	}
 }
 my $gndbsz = $cdb->get_dbsz;
-if ($gndbsz > $godbsz) {
-	printf "Global dbsz +%d\n", $gndbsz-$godbsz;
-}
+my $logmsg = "Total ";
 if ($cdb->{_stats}->{data}->{insert} > 0) {
+	$logmsg .= "dbsz +".$cdb->{_stats}->{data}->{insert};
 	printf "Global data inserts +%d\n", $cdb->{_stats}->{data}->{insert};
 }
 if ($cdb->{_stats}->{name}->{insert} > 0) {
+	$logmsg .= ", name inserts +".$cdb->{_stats}->{name}->{insert};
 	printf "Global name inserts +%d\n", $cdb->{_stats}->{name}->{insert};
 }
+if ($gndbsz > $godbsz) {
+	my $change = $gndbsz-$godbsz;
+	$logmsg .= ", db sizes  +".$cdb->{_stats}->{name}->{insert};
+	printf "Global dbsz +%d\n", $gndbsz-$godbsz;
+}
+syslog($prio, $logmsg);
+
 	
 if ($opt_v>0) {
 	printf "Bonus info.. max val was a %s, value %s, id %d\n", $maxname, $maxval, $maxid;
