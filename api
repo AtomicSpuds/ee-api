@@ -178,30 +178,35 @@ foreach my $l (split(/^/,$csv)) {
 	my $ninscount = $cdb->{_stats}->{data}->{insert};
 	if ($ninscount > $oinscount) {
 		my $change = $ninscount-$oinscount;
-		printf "inserts +%d\n", $change;
+		#printf "inserts +%d\n", $change;
 		syslog($prio, "+%d inserts for %s", $change, $name);
 	}
 	if ($ndbsz > $odbsz) {
 		my $change = $ndbsz-$odbsz;
-		printf "dbsz +%d\n", $change;
+		#printf "dbsz +%d\n", $change;
 		syslog($prio, "+%d db size", $change);
 	}
 }
 my $gndbsz = $cdb->get_dbsz;
 my $logmsg = "Total ";
 if ($cdb->{_stats}->{data}->{insert} > 0) {
-	$logmsg .= "dbsz +".$cdb->{_stats}->{data}->{insert};
-	printf "Global data inserts +%d\n", $cdb->{_stats}->{data}->{insert};
+	$logmsg .= ", +".$cdb->{_stats}->{data}->{insert};
+	$logmsg .= " data inserts";
+	#printf "Global data inserts +%d\n", $cdb->{_stats}->{data}->{insert};
 }
 if ($cdb->{_stats}->{name}->{insert} > 0) {
-	$logmsg .= ", name inserts +".$cdb->{_stats}->{name}->{insert};
-	printf "Global name inserts +%d\n", $cdb->{_stats}->{name}->{insert};
+	$logmsg .= ", + ".$cdb->{_stats}->{name}->{insert};
+	$logmsg .= " name inserts";
+	#printf "Global name inserts +%d\n", $cdb->{_stats}->{name}->{insert};
 }
 if ($gndbsz > $godbsz) {
 	my $change = $gndbsz-$godbsz;
-	$logmsg .= ", db sizes  +".$cdb->{_stats}->{name}->{insert};
-	printf "Global dbsz +%d\n", $gndbsz-$godbsz;
+	$logmsg .= ", +".$change;
+	$logmsg .= " dbsize";
+	#printf "Global dbsz +%d\n", $gndbsz-$godbsz;
 }
+
+$logmsg =~ s/ , / /g;
 syslog($prio, $logmsg);
 
 	
