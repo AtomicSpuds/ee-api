@@ -36,7 +36,7 @@ our $opt_c;
 
 $opt_c = $ENV{'HOME'}."/.ee-api.conf";
 
-getopt('c:s:v');
+getopts('v');
 
 if (!defined($opt_v)) {
 	$opt_v = 0;
@@ -103,22 +103,36 @@ sub add_tag {
 		$tagid = get_tag_id($cdb, $tag);
 	}
 
-	print "Found match: ".$ret[0]." - ".$ret[1]."\n";
+	handle_match($cdb, $tagid, @ret);
 
 	while ( @ret = $ret->{sth}->fetchrow_array ) {
-		print "Found match: ".$ret[0]." - ".$ret[1]."\n";
-	
-		if (defined($tagid)) {	
-			add_tagem($cdb, $tagid, $ret[0]);
-		}
+		handle_match($cdb, $tagid, @ret);
 	}
 
 	$ret->{sth}->finish;
+}
+
+sub handle_match {
+	my ($cdb, $tagid, @ret) = @_;
+
+	print "Found match: ".$ret[0]." - ".$ret[1]."\n";
+	
+	if (defined($tagid)) {	
+		add_tagem($cdb, $tagid, $ret[0]);
+	} else {
+		if ($opt_v>0) {
+			print "handle_match: tagid = <undef>\n";
+		}
+	}
 }
 	
 
 sub get_tag_id {
 	my ($cdb, $tag) = @_;
+
+	if ($opt_v>0) {
+		print "get_tag_id(cdb, $tag): start\n";
+	}
 
 	my $q = "SELECT id from ee_api_tags where tag = ?";
 
@@ -154,6 +168,10 @@ sub get_tag_id {
 
 sub add_tagem {
 	my ($cdb, $tagid, $nameid) = @_;
+
+	if ($opt_v>0) {
+		print "add_tagem(cdb, $tagid, $nameid): start\n";
+	}
 
 	my $q = "SELECT id from ee_api_tagem where tagid = ? and nameid = ?";
 
