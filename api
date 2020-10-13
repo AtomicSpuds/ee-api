@@ -112,8 +112,10 @@ foreach my $l (split(/^/,$csv)) {
 			next;
 		}
 	}
-			
-	printf STDERR "==> %s\n", $name;
+
+	if ($opt_v>0) {
+		printf STDERR "==> %s\n", $name;
+	}
 	my $ri = get_data($cdb, "${apiurl}/$id");
 
 	my $parsed;
@@ -179,7 +181,7 @@ foreach my $l (split(/^/,$csv)) {
 	if ($ninscount > $oinscount) {
 		my $change = $ninscount-$oinscount;
 		#printf "inserts +%d\n", $change;
-		syslog($prio, "+%d inserts for %s", $change, $name);
+		syslog($prio, "+%d inserts for %d %s", $change, $id, $name);
 	}
 	if ($ndbsz > $odbsz) {
 		my $change = $ndbsz-$odbsz;
@@ -231,8 +233,8 @@ sub get_data {
 		}
 	}
 
-	# be gentle, don't spam, 3s delay ought to be kind enough
-	my $delay=3;
+	# be gentle, don't spam, 1s delay ought to be kind enough
+	my $delay=1;
 	while ( ($lastfetch+$delay) > time() ) {
 		sleep(1);
 	}
