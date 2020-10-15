@@ -1,0 +1,166 @@
+#!/usr/bin/perl
+
+# Copyright (c) 2020 Atomic Spuds <AtomicSpudsGame@gmail.com>
+#
+# Permission to use, copy, modify, and distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+use strict;
+use warnings;
+
+use Config::Tiny;
+use Data::Dumper;
+use Date::Manip;
+use Getopt::Std;
+use JSON;
+use POSIX qw{strftime};
+use Sys::Syslog qw(:standard :macros);
+
+use Common::Db;
+
+STDERR->autoflush(1);
+STDOUT->autoflush(1);
+
+our $opt_v = 0;
+our $opt_s;
+our $opt_c;
+
+$opt_c = $ENV{'HOME'}."/.ee-api.conf";
+
+getopts('v');
+
+if (! -f $opt_c) {
+	die "config file '$opt_c' does not exist";
+}
+
+our $config = Config::Tiny->read( $opt_c );
+
+my $cdb = Common::Db->new(
+	'config' => $config,
+);
+$cdb->init;
+
+
+# syslog bits
+my $fac = "daemon";
+our $prio = LOG_INFO;
+my $proc = "ee-trend";
+
+openlog($proc, "ndelay", $fac);
+
+#if (!defined($ARGV[0])) {
+#	print STDERR "$0: <name pattern> [<tag>]\n";
+#	exit(1);
+#}
+
+
+show_trend($cdb, '10/4/2020', '10/10/2020', 'Sansha Ship Debris');
+show_trend($cdb, '10/7/2020', '10/15/2020', 'PLEX');
+
+sub show_trend {
+	my ($cdb, $range_start, $range_end, $commodity) = @_;
+my $trend = get_trend($cdb, $range_start, $range_end, $commodity);
+
+print "==> $commodity trends $range_start - $range_end\n";
+printf  "%13s %10s %10s %10s\n"," ","min","max","avg";
+foreach my $var (('buy','lowest_sell','highest_buy','sell')) {
+	foreach my $r (('min','max','avg')) {
+		if (!defined($trend->{$var}->{$r})) {
+			$trend->{$var}->{$r}=0;
+		}
+	}
+	printf "%13s %10d %10d %10d\n",
+		$var,
+		$trend->{$var}->{min},
+		$trend->{$var}->{max},
+		$trend->{$var}->{avg};
+}
+
+print "\n";
+
+}
+
+exit(0);
+
+# db interaction routines
+
+sub get_trend {
+	my ($cdb, $range_start, $range_end, $commodity) = @_;
+
+	my $q = "select n.name, d.tradetime, d.lowest_sell, d.sell, d.buy, d.highest_buy from ee_api_data as d, ee_api_names as n where n.name like ? and n.id = d.id and d.tradetime > ? and d.tradetime < ? order by d.tradetime desc";
+
+	my $ret = $cdb->cached_execute($q, $commodity, $range_start, $range_end);
+
+	if (defined($ret->{errstr})) {
+		$ret->{sth}->finish;
+		$cdb->dbdie($ret,"get_trend(cdb, $range_start, $range_end, $commodity):","SELECT");
+	}
+
+	my (@ret) = $ret->{sth}->fetchrow_array;
+	if ($#ret < 0 || !defined($ret[0])) {
+		print "get_trend(cdb, $range_start, $range_end, $commodity): no match, bailing\n";
+		exit(1);
+	}
+
+	while ( @ret = $ret->{sth}->fetchrow_array ) {
+		handle_row($cdb, @ret);
+	}
+
+	$ret->{sth}->finish;
+	my $trend = $cdb->{_trend};
+	$cdb->{_trend} = { };
+	return $trend;
+}
+
+sub handle_row {
+	my ($cdb, @ret) = @_;
+
+	# we know the order, so no need to programatically query column names
+
+	my @colname = ('name','tradetime','lowest_sell','sell','buy','highest_buy');
+
+	foreach my $c (@colname) {
+		foreach my $r (('min','max','count','sum')) {
+			if (defined($cdb->{_trend}->{$c}->{$r})) {
+				next;
+			}
+			$cdb->{_trend}->{$c}->{$r}=0;
+		}
+	}
+
+	my $i=0;
+	while ($i <= $#ret) {
+		my $cname = $colname[$i];
+		my $rval  = $ret[$i];
+		$i++;
+		if (! ($cname =~ /buy|sell|volume/)) {
+			next;
+		}
+		if (!defined($rval)) {
+			next;
+		}
+		if ($opt_v>0) {
+			printf "handle_row col %s val %s\n", $cname, $rval;
+		}
+		if ($cdb->{_trend}->{$cname}->{min} > $rval || $cdb->{_trend}->{$cname}->{min} == 0) {
+			$cdb->{_trend}->{$cname}->{min} = $rval;
+		}
+		if ($cdb->{_trend}->{$cname}->{max} < $rval) {
+			$cdb->{_trend}->{$cname}->{max} = $rval;
+		}
+		$cdb->{_trend}->{$cname}->{sum} += $rval;
+		$cdb->{_trend}->{$cname}->{count}++;
+		$cdb->{_trend}->{$cname}->{avg} = $cdb->{_trend}->{$cname}->{sum} / $cdb->{_trend}->{$cname}->{count};
+	}
+}
+	
+1;
