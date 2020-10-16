@@ -17,6 +17,9 @@ package API::Cache;
 use strict;
 use warnings;
 
+use IO::Compress::Xz; # qw(xz $XzError);
+use IO::Uncompress::UnXz; # qw(unxz $UnXzError);
+
 sub new {
 	my ($class) = @_;
 
@@ -76,13 +79,22 @@ sub cache {
 		if (!defined($ri->{key})) {
 			$ri->{key} = $ci->{key};
 		}
-	
-		$ri->{data} = "";
-		open(H,"xz -d < $cdir/$hash|");
-		while(<H>) {
-			$ri->{data} .= $_;
+
+		my $str;
+		my $status;
+		my $data;
+		my $uz = IO::Uncompress::UnXz->new("$cdir/$hash");
+		$ri->{data} = "";	
+		while (1) {
+			$status = $uz->read(\$str);
+			if ($status < 1) {
+				last;
+			}
+			$ri->{data} .= $str;
 		}
-		close(H);
+		$uz->close();
+		undef($uz);
+		
 		if ($me->{V} > 0) {
 			printf STDERR "cache read: %d bytes\n", length($ri->{data});
 		}
@@ -98,9 +110,13 @@ sub cache {
 	print M $ci->{key}."\n";
 	close(M);
 
-	open(H,"|xz -9e>$cdir/.${hash}");
-	print H $ci->{data};
-	close(H);
+	#open(H,"|xz -9e>$cdir/.${hash}");
+	#print H $ci->{data};
+	#close(H);
+
+	my $xz = IO::Compress::Xz->new("$cdir/.${hash}", Preset => 9, Extreme => 1);
+	$xz->print($ci->{data});
+	$xz->close;
 
 	rename("$cdir/.${hash}", "$cdir/$hash");
 
