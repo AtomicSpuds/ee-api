@@ -32,6 +32,8 @@ use Common::Db;
 STDERR->autoflush(1);
 STDOUT->autoflush(1);
 
+our $starttime = time();
+
 our $opt_v = 0;
 our $opt_s;
 our $opt_c;
@@ -58,6 +60,8 @@ $cdb->init;
 
 $cdb->{_stats}->{data}->{insert} = 0;
 $cdb->{_stats}->{name}->{insert} = 0;
+$cdb->{_stats}->{count}->{procesed} = 0;
+$cdb->{_stats}->{count}->{updated} = 0;
 
 our $cache = API::Cache->new();
 our $json = JSON->new->allow_nonref;
@@ -113,6 +117,8 @@ foreach my $l (split(/^/,$csv)) {
 		}
 	}
 
+	$cdb->{_stats}->{count}->{procesed}++;
+
 	if ($opt_v>0) {
 		printf STDERR "==> %s\n", $name;
 	}
@@ -124,6 +130,18 @@ foreach my $l (split(/^/,$csv)) {
 	};
 	if ($@) {
 		printf STDERR "json->decode() Error: %s\n", $@;
+		printf STDERR "data returned:\n%s\n",$ri->{data};
+		# rather than hammer the server having issues, lets sleep!
+		my $sleep = 3600;
+		# primary down, back anytime, round it off
+		if ($ri->{data} =~ /521 Origin Down/) {
+			$sleep += 400;
+		}
+		# Did we do something wrong? a CDN does not go down so ..
+		# lets be extra careful and sleep lots more
+		if ($ri->{data} =~ /Server closed connection/) {
+			$sleep += 7200;
+		}
 		next;
 	}
 
@@ -182,6 +200,7 @@ foreach my $l (split(/^/,$csv)) {
 		my $change = $ninscount-$oinscount;
 		#printf "inserts +%d\n", $change;
 		syslog($prio, "+%d inserts for %d %s", $change, $id, $name);
+		$cdb->{_stats}->{count}->{updated}++;
 	}
 	if ($ndbsz > $odbsz) {
 		my $change = $ndbsz-$odbsz;
@@ -207,6 +226,9 @@ if ($gndbsz > $godbsz) {
 	$logmsg .= " dbsize";
 	#printf "Global dbsz +%d\n", $gndbsz-$godbsz;
 }
+my $endtime = time();
+
+$logmsg .= ", ".($endtime-$starttime)."s";
 
 $logmsg =~ s/ , / /g;
 syslog($prio, $logmsg);
@@ -330,6 +352,12 @@ sub is_modified {
 	printf STDERR "is_modified: header '%s' vs db '%s'\n", $ht, $dt;
 	}
 
+	if (!defined($ht)) {
+		return $yes;
+	}
+	if (!defined($dt)) {
+		return $yes;
+	}
 	if ($ht == $dt) {
 		return $no;
 	}
