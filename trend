@@ -65,6 +65,7 @@ openlog($proc, "ndelay", $fac);
 
 show_trend($cdb, '10/4/2020', '10/10/2020', 'Sansha Ship Debris');
 show_trend($cdb, '10/7/2020', '10/15/2020', 'PLEX');
+show_trend($cdb, '10/10/2020', '10/17/2020', 'PLEX');
 
 sub show_trend {
 	my ($cdb, $range_start, $range_end, $commodity) = @_;
@@ -72,13 +73,18 @@ my $trend = get_trend($cdb, $range_start, $range_end, $commodity);
 
 print "==> $commodity trends $range_start - $range_end\n";
 printf  "%13s %10s %10s %10s\n"," ","min","max","avg";
-foreach my $var (('buy','lowest_sell','highest_buy','sell')) {
+foreach my $var (('buy','lowest_sell','highest_buy','sell','volume')) {
 	foreach my $r (('min','max','avg')) {
 		if (!defined($trend->{$var}->{$r})) {
 			$trend->{$var}->{$r}=0;
 		}
 	}
-	printf "%13s %10d %10d %10d\n",
+	
+	my $fmt = "%13s %10d %10d %10d\n";
+	if ($var eq "volume") {
+		$fmt = "%13s %10.2f %10.2f %10.2f\n";
+	}
+	printf $fmt,
 		$var,
 		$trend->{$var}->{min},
 		$trend->{$var}->{max},
@@ -96,7 +102,7 @@ exit(0);
 sub get_trend {
 	my ($cdb, $range_start, $range_end, $commodity) = @_;
 
-	my $q = "select n.name, d.tradetime, d.lowest_sell, d.sell, d.buy, d.highest_buy from ee_api_data as d, ee_api_names as n where n.name like ? and n.id = d.id and d.tradetime > ? and d.tradetime < ? order by d.tradetime desc";
+	my $q = "select n.name, d.tradetime, d.lowest_sell, d.sell, d.buy, d.highest_buy, d.volume from ee_api_data as d, ee_api_names as n where n.name like ? and n.id = d.id and d.tradetime > ? and d.tradetime < ? order by d.tradetime desc";
 
 	my $ret = $cdb->cached_execute($q, $commodity, $range_start, $range_end);
 
@@ -126,7 +132,7 @@ sub handle_row {
 
 	# we know the order, so no need to programatically query column names
 
-	my @colname = ('name','tradetime','lowest_sell','sell','buy','highest_buy');
+	my @colname = ('name','tradetime','lowest_sell','sell','buy','highest_buy','volume');
 
 	foreach my $c (@colname) {
 		foreach my $r (('min','max','count','sum')) {
