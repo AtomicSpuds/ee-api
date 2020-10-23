@@ -135,13 +135,17 @@ foreach my $l (split(/^/,$csv)) {
 		my $sleep = 3600;
 		# primary down, back anytime, round it off
 		if ($ri->{data} =~ /521 Origin Down/) {
+			syslog($prio, "'521 Origin Down getting' $id info");
 			$sleep += 400;
 		}
 		# Did we do something wrong? a CDN does not go down so ..
 		# lets be extra careful and sleep lots more
 		if ($ri->{data} =~ /Server closed connection/) {
+			syslog($prio, "'Server closed connection' getting $id info");
 			$sleep += 7200;
 		}
+		syslog($prio, "Pausing %ds", $sleep);
+		sleep($sleep);
 		next;
 	}
 
