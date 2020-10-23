@@ -67,6 +67,77 @@ CREATE TABLE public.ee_api_summary (
 ALTER TABLE public.ee_api_summary OWNER TO ee_api;
 
 --
+-- Name: ee_api_tagem; Type: TABLE; Schema: public; Owner: ee_api
+--
+
+CREATE TABLE public.ee_api_tagem (
+    id integer NOT NULL,
+    tagid integer,
+    nameid bigint,
+    created timestamp with time zone DEFAULT now()
+);
+
+
+ALTER TABLE public.ee_api_tagem OWNER TO ee_api;
+
+--
+-- Name: ee_api_tagem_id_seq; Type: SEQUENCE; Schema: public; Owner: ee_api
+--
+
+CREATE SEQUENCE public.ee_api_tagem_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.ee_api_tagem_id_seq OWNER TO ee_api;
+
+--
+-- Name: ee_api_tagem_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: ee_api
+--
+
+ALTER SEQUENCE public.ee_api_tagem_id_seq OWNED BY public.ee_api_tagem.id;
+
+
+--
+-- Name: ee_api_tags; Type: TABLE; Schema: public; Owner: ee_api
+--
+
+CREATE TABLE public.ee_api_tags (
+    id integer NOT NULL,
+    tag text,
+    created timestamp with time zone DEFAULT now()
+);
+
+
+ALTER TABLE public.ee_api_tags OWNER TO ee_api;
+
+--
+-- Name: ee_api_tags_id_seq; Type: SEQUENCE; Schema: public; Owner: ee_api
+--
+
+CREATE SEQUENCE public.ee_api_tags_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.ee_api_tags_id_seq OWNER TO ee_api;
+
+--
+-- Name: ee_api_tags_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: ee_api
+--
+
+ALTER SEQUENCE public.ee_api_tags_id_seq OWNED BY public.ee_api_tags.id;
+
+
+--
 -- Name: ee_api_urlstatus; Type: TABLE; Schema: public; Owner: ee_api
 --
 
@@ -107,6 +178,20 @@ ALTER SEQUENCE public.ee_api_urlstatus_id_seq OWNED BY public.ee_api_urlstatus.i
 
 
 --
+-- Name: ee_api_tagem id; Type: DEFAULT; Schema: public; Owner: ee_api
+--
+
+ALTER TABLE ONLY public.ee_api_tagem ALTER COLUMN id SET DEFAULT nextval('public.ee_api_tagem_id_seq'::regclass);
+
+
+--
+-- Name: ee_api_tags id; Type: DEFAULT; Schema: public; Owner: ee_api
+--
+
+ALTER TABLE ONLY public.ee_api_tags ALTER COLUMN id SET DEFAULT nextval('public.ee_api_tags_id_seq'::regclass);
+
+
+--
 -- Name: ee_api_urlstatus id; Type: DEFAULT; Schema: public; Owner: ee_api
 --
 
@@ -127,6 +212,22 @@ ALTER TABLE ONLY public.ee_api_names
 
 ALTER TABLE ONLY public.ee_api_summary
     ADD CONSTRAINT ee_api_summary_id_key UNIQUE (id);
+
+
+--
+-- Name: ee_api_tagem ee_api_tagem_id_key; Type: CONSTRAINT; Schema: public; Owner: ee_api
+--
+
+ALTER TABLE ONLY public.ee_api_tagem
+    ADD CONSTRAINT ee_api_tagem_id_key UNIQUE (id);
+
+
+--
+-- Name: ee_api_tags ee_api_tags_id_key; Type: CONSTRAINT; Schema: public; Owner: ee_api
+--
+
+ALTER TABLE ONLY public.ee_api_tags
+    ADD CONSTRAINT ee_api_tags_id_key UNIQUE (id);
 
 
 --
@@ -156,6 +257,27 @@ CREATE INDEX ee_api_names_nameidx ON public.ee_api_names USING btree (name);
 --
 
 CREATE INDEX ee_api_summary_timeidx ON public.ee_api_summary USING btree (tradetime);
+
+
+--
+-- Name: ee_api_tagem_nameid; Type: INDEX; Schema: public; Owner: ee_api
+--
+
+CREATE INDEX ee_api_tagem_nameid ON public.ee_api_tagem USING btree (nameid);
+
+
+--
+-- Name: ee_api_tagem_tagid; Type: INDEX; Schema: public; Owner: ee_api
+--
+
+CREATE INDEX ee_api_tagem_tagid ON public.ee_api_tagem USING btree (tagid);
+
+
+--
+-- Name: ee_api_tags_tag; Type: INDEX; Schema: public; Owner: ee_api
+--
+
+CREATE INDEX ee_api_tags_tag ON public.ee_api_tags USING btree (tag);
 
 
 --
