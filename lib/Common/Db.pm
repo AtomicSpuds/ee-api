@@ -53,6 +53,10 @@ sub init_db {
 		print STDERR "config requires a [sql] section\n";
 		return;
 	}
+	my @tables = split(/,/,$sc->{tables});
+	foreach my $t (@tables) {
+		printf STDERR "config->sql->tables +%s\n",$t;
+	}
 
 	# calling init_db by definition means re-connecting
 	my $dbh;
@@ -137,10 +141,10 @@ sub init_db {
 	$me->{dbinfo} = $dbinfo;
 
 
-	my @tables = $dbh->tables();
+	my @dbtables = $dbh->tables();
 	my %tablefound;
-	foreach my $tname (@tables) {
-		foreach my $tn (('ee_api_names','ee_api_summary','ee_api_data','ee_api_urlstatus','ee_api_tags','ee_api_tagem')) {
+	foreach my $tname (@dbtables) {
+		foreach my $tn (@tables) {
 			my $tre = $dbinfo->{tablere};
 			$tre =~ s/%name%/$tn/g;
 			if ($tname =~ m/$tre/) {
@@ -149,80 +153,46 @@ sub init_db {
 		}
 	}
 
-	if (!defined($tablefound{'ee_api_names'})) {
-		my $q = "CREATE TABLE ee_api_names (";
-		$q .=   "id bigint UNIQUE, ";
-		$q .=   "name varchar, ";
-		$q .=   "created timestamp without time zone default now() ";
-		$q .=   ")";
-		#print "$q\n";
-		my $rv = $dbh->do($q);
-		printf STDERR "dbh->do(%s) returned a %s ('%s')\n", $q, ref($rv), Dumper($rv);
-		$me->mkidx('ee_api_names_nameidx', 'ee_api_names', 'name');
+	foreach my $tn (@tables) {
+		if (!defined($tablefound{$tn})) {
+			my $i=0;
+			my $create = "";
+			while (1) {
+				my $var="t$i";
+				my $val = $config->{$tn}->{$var};
+				if (!defined($val)) {
+					last;
+				}
+				$create .= "${val} ";
+				#printf STDERR "config table $var = '%s'\n",$val;
+				$i++;
+			}
+			foreach my $vv (('serialtype','blobtype')) {
+				my $val = $dbinfo->{$vv};
+				$create =~ s/%${vv}%/${val}/g;
+			}
+			#printf STDERR "create = '%s'\n", $create;
+			my $rv = $dbh->do($create);
+			printf STDERR "dbh->do(%s) returned a %s ('%s')\n", $create, ref($rv), Dumper($rv);
+			$i=0;
+			while (1) {
+				my $var="i$i";
+				my $val = $config->{$tn}->{$var};
+				if (!defined($val)) {
+					last;
+				}
+				#printf STDERR "config table $var = '%s'\n",$val;
+				my ($idxname, $idxvars) = split(/;/,$val);
+				if (!defined($idxname) || !defined($idxvars)) {
+					printf STDERR "config table $var    ... improper line, did ; get used as a separator?\n";
+					last;
+				}
+				#printf STDERR "mkidx('%s', '%s', '%s')\n", $idxname, $tn, $idxvars;
+				$me->mkidx($idxname, $tn, $idxvars);
+				$i++;
+			}
+		}
 	}
-	if (!defined($tablefound{'ee_api_summary'})) {
-		my $q = "CREATE TABLE ee_api_summary (";
-		$q .=   "id bigint UNIQUE, ";
-		$q .=   "tradetime timestamp, ";
-		$q .=   "sell numeric(15,2), ";
-		$q .=   "buy numeric(15,2), ";
-		$q .=	"lowest_sell numeric(15,2), ";
-		$q .=	"highest_buy numeric(15,2), ";
-		$q .=   "created timestamp without time zone default now() ";
-		$q .=   ")";
-		my $rv = $dbh->do($q);
-		$me->mkidx('ee_api_summary_timeidx','ee_api_summary', 'tradetime');
-	}
-	if (!defined($tablefound{'ee_api_data'})) {
-		my $q = "CREATE TABLE ee_api_data (";
-		$q .= "id bigint, ";
-		$q .= "tradetime timestamp, ";
-		$q .= "sell numeric(15,2), ";
-		$q .= "buy numeric(15,2), ";
-		$q .= "lowest_sell numeric(15,2), ";
-		$q .= "highest_buy numeric(15,2), ";
-		$q .= "volume numeric(15,2), ";
-		$q .= "entered timestamp without time zone default now() ";
-		$q .= ")";
-		my $rv = $dbh->do($q);
-		$me->mkidx('ee_api_data_id_time','ee_api_data','id,tradetime');
-		$me->mkidx('ee_api_data_time','ee_api_data','tradetime');
-	}
-	if (!defined($tablefound{'ee_api_urlstatus'})) {
-		my $q = "CREATE TABLE ee_api_urlstatus (";
-		$q .= "id ".$dbinfo->{serialtype}.", ";
-		$q .= "url TEXT, ";
-		$q .= "contlen int, ";
-		$q .= "conttype text, ";
-		$q .= "expires timestamp, ";
-		$q .= "lastmod timestamp with time zone, ";
-		$q .= "expectct text, ";
-		$q .= "crated timestamp with time zone default now() ";
-		$q .= ")";
-		my $rv = $dbh->do($q);
-		$me->mkidx('ee_api_url_url', 'ee_api_urlstatus', 'url');
-	}
-	if (!defined($tablefound{'ee_api_tags'})) {
-		my $q = "CREATE TABLE ee_api_tags (";
-		$q .= "id ".$dbinfo->{serialtype}.", ";
-		$q .= "tag text, ";
-		$q .= "created timestamp with time zone default now() ";
-		$q .= ")";
-		my $rv = $dbh->do($q);
-		$me->mkidx('ee_api_tags_tag','ee_api_tags','tag');
-	}
-	if (!defined($tablefound{'ee_api_tagem'})) {
-		my $q = "CREATE TABLE ee_api_tagem (";
-		$q .= "id ".$dbinfo->{serialtype}.", ";
-		$q .= "tagid int, ";
-		$q .= "nameid bigint, ";
-		$q .= "created timestamp with time zone default now() ";
-		$q .= ")";
-		my $rv = $dbh->do($q);
-		$me->mkidx('ee_api_tagem_nameid','ee_api_tagem','nameid');
-		$me->mkidx('ee_api_tagem_tagid','ee_api_tagem','tagid');
-	}
-		
 }
 
 sub mkidx {
@@ -312,5 +282,3 @@ sub dbdie {
 }
 
 1;
-
-
