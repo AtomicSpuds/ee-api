@@ -54,6 +54,7 @@ our $config = Config::Tiny->read( $opt_c );
 
 my $cdb = Common::Db->new(
 	'config' => $config,
+	'appname' => 'ee-api',
 );
 $cdb->init;
 #print "Made it past init\n";
@@ -129,20 +130,36 @@ foreach my $l (split(/^/,$csv)) {
 		$parsed = $json->decode( $ri->{data} );
 	};
 	if ($@) {
-		printf STDERR "json->decode() Error: %s\n", $@;
-		printf STDERR "data returned:\n%s\n",$ri->{data};
+		my $handled = 0;
 		# rather than hammer the server having issues, lets sleep!
 		my $sleep = 3600;
 		# primary down, back anytime, round it off
 		if ($ri->{data} =~ /521 Origin Down/) {
 			syslog($prio, "'521 Origin Down getting' $id info");
 			$sleep += 400;
+			$handled++;
 		}
 		# Did we do something wrong? a CDN does not go down so ..
 		# lets be extra careful and sleep lots more
 		if ($ri->{data} =~ /Server closed connection/) {
 			syslog($prio, "'Server closed connection' getting $id info");
 			$sleep += 7200;
+			$handled++;
+		}
+		# malformed? surely not...
+		if ($@ =~ /malformed JSON string/) {
+			syslog($prio, "malformed JSON string getting $id info");
+			$sleep += 2;
+			$handled++;
+		}
+		if ($ri->{data} =~ /Connection reset by peer/) {
+			syslog($prio, "'Connection reset by peer' getting $id info");
+			$sleep += 1000;
+			$handled++;
+		}
+		if ($handled < 1) {
+		printf STDERR "json->decode() Error: %s\n", $@;
+		printf STDERR "data returned:\n%s\n",$ri->{data};
 		}
 		syslog($prio, "Pausing %ds", $sleep);
 		sleep($sleep);
