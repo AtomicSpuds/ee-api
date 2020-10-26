@@ -1,0 +1,501 @@
+#!/usr/bin/perl
+
+# Copyright (c) 2020 Atomic Spuds <AtomicSpudsGame@gmail.com>
+#
+# Permission to use, copy, modify, and distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+use strict;
+use warnings;
+
+use Config::Tiny;
+use Data::Dumper;
+use Date::Manip;
+use Getopt::Std;
+use JSON;
+use POSIX qw{strftime};
+use Sys::Syslog qw(:standard :macros);
+
+use API::Cache;
+use API::WWW;
+use Common::Db;
+
+STDERR->autoflush(1);
+STDOUT->autoflush(1);
+
+our $starttime = time();
+
+our $opt_v = 0;
+our $opt_s;
+our $opt_c;
+
+$opt_c = $ENV{'HOME'}."/.ee-api.conf";
+
+getopt('c:s:v');
+
+if (!defined($opt_v)) {
+	$opt_v = 0;
+}
+
+if (! -f $opt_c) {
+	die "config file '$opt_c' does not exist";
+}
+
+our $config = Config::Tiny->read( $opt_c );
+
+my $cdb = Common::Db->new(
+	'config' => $config,
+	'appname' => 'ee-api',
+);
+$cdb->init;
+#print "Made it past init\n";
+
+$cdb->{_stats}->{data}->{insert} = 0;
+$cdb->{_stats}->{name}->{insert} = 0;
+$cdb->{_stats}->{count}->{procesed} = 0;
+$cdb->{_stats}->{count}->{updated} = 0;
+
+our $cache = API::Cache->new();
+our $json = JSON->new->allow_nonref;
+our $www = API::WWW->new();
+
+# syslog bits
+my $fac = "daemon";
+our $prio = LOG_INFO;
+my $proc = "ee-api";
+
+openlog($proc, "ndelay", $fac);
+
+our $lastfetch = 0;
+
+my $apiurl = "https://api.eve-echoes-market.com/market-stats";
+
+my $ri = get_data($cdb, "${apiurl}/stats.csv");
+
+my $csv = $ri->{data};
+
+my $count = 0;
+my @names;
+my @data;
+my $line;
+my $sheet = { };
+my $maxval = 0;
+my $maxid;
+my $maxname;
+my $godbsz = $cdb->get_dbsz;
+foreach my $l (split(/^/,$csv)) {
+	chomp($line=$l);
+	if ($count++ == 0) {
+		#printf STDERR "1st line: '%s'\n",$line;
+		(@names) = split(/,/,$line);
+		my $ncount = 0;
+		foreach my $n (@names) {
+			#printf STDERR "title '%s' = %d\n",$n,$ncount;
+			$sheet->{title}->{$n} = $ncount++;
+		}
+		next;
+	}
+	#printf STDERR "Processing line %d '%s'\n", $count, $line;
+	@data = split(/,/,$line);
+	my $idoff= $sheet->{title}->{item_id};
+	my $id = $data[$idoff];
+	my $nameoff = $sheet->{title}->{name};
+	my $name = $data[$nameoff];
+	save_name($cdb, $id, $name);
+
+	if (defined($opt_s)) {
+		if (! ($name =~ /$opt_s/)) {
+			next;
+		}
+	}
+
+	$cdb->{_stats}->{count}->{procesed}++;
+
+	if ($opt_v>0) {
+		printf STDERR "==> %s\n", $name;
+	}
+	my $ri = get_data($cdb, "${apiurl}/$id");
+
+	my $parsed;
+	eval {
+		$parsed = $json->decode( $ri->{data} );
+	};
+	if ($@) {
+		my $handled = 0;
+		# rather than hammer the server having issues, lets sleep!
+		my $sleep = 3600;
+		# primary down, back anytime, round it off
+		if ($ri->{data} =~ /521 Origin Down/) {
+			syslog($prio, "'521 Origin Down getting' $id info");
+			$sleep += 400;
+			$handled++;
+		}
+		# Did we do something wrong? a CDN does not go down so ..
+		# lets be extra careful and sleep lots more
+		if ($ri->{data} =~ /Server closed connection/) {
+			syslog($prio, "'Server closed connection' getting $id info");
+			$sleep += 7200;
+			$handled++;
+		}
+		# malformed? surely not...
+		if ($@ =~ /malformed JSON string/) {
+			syslog($prio, "malformed JSON string getting $id info");
+			$sleep += 2;
+			$handled++;
+		}
+		if ($ri->{data} =~ /Connection reset by peer/) {
+			syslog($prio, "'Connection reset by peer' getting $id info");
+			$sleep += 1000;
+			$handled++;
+		}
+		if ($handled < 1) {
+		printf STDERR "json->decode() Error: %s\n", $@;
+		printf STDERR "data returned:\n%s\n",$ri->{data};
+		}
+		syslog($prio, "Pausing %ds", $sleep);
+		sleep($sleep);
+		next;
+	}
+
+	if ($opt_v>0) {
+		print $json->pretty->encode( $parsed );
+		printf "    ID         Time       Low   Sell      Buy    High   Volume\n";
+	}
+	#      "10200000104 1599566400  500000 1000000   73500  300000   3.2
+
+	my ($odbsz, $oinscount);
+	$odbsz = $cdb->get_dbsz;
+	$oinscount = $cdb->{_stats}->{data}->{insert};
+	foreach my $d (sort { $b->{time} <=> $a->{time} } @{$parsed}) {
+		my $nd = { };
+
+		foreach my $k (keys %{$d}) {
+			if (!defined($d->{$k})) {
+				#printf "d->{$k} is undefined?\n";
+				$nd->{$k} = "NULL";
+				next;
+			}
+			if ($d->{$k} eq "null") {
+				$nd->{$k} = "NULL";
+				next;
+			}
+			if ($k =~ /time/) {
+				$nd->{$k} = $d->{$k};
+				next;
+			}
+			if ($k =~ /(buy|sell)/) {
+				if ($d->{$k} > $maxval) {
+					$maxval = $d->{$k};
+					$maxid  = $id;
+					$maxname = $name;
+				}
+				$nd->{$k} = $d->{$k};
+				next;
+			}
+			$nd->{$k} = sprintf("%7.2f",$d->{$k});
+		}
+		if ($opt_v>0) {				
+			printf "%d %10s %11s %11s %11s %11s %6s\n",
+				$id,
+				$nd->{time},
+				$nd->{lowest_sell},
+				$nd->{sell},
+				$nd->{buy},
+				$nd->{highest_buy},
+				$nd->{volume};
+		}
+		save_data($cdb, $id, $nd);
+	}
+	my $ndbsz = $cdb->get_dbsz;
+	my $ninscount = $cdb->{_stats}->{data}->{insert};
+	if ($ninscount > $oinscount) {
+		my $change = $ninscount-$oinscount;
+		#printf "inserts +%d\n", $change;
+		syslog($prio, "+%d inserts for %d %s", $change, $id, $name);
+		$cdb->{_stats}->{count}->{updated}++;
+	}
+	if ($ndbsz > $odbsz) {
+		my $change = $ndbsz-$odbsz;
+		#printf "dbsz +%d\n", $change;
+		syslog($prio, "+%d db size", $change);
+	}
+}
+my $gndbsz = $cdb->get_dbsz;
+my $logmsg = "Total ";
+if ($cdb->{_stats}->{data}->{insert} > 0) {
+	$logmsg .= ", +".$cdb->{_stats}->{data}->{insert};
+	$logmsg .= " data inserts";
+	#printf "Global data inserts +%d\n", $cdb->{_stats}->{data}->{insert};
+}
+if ($cdb->{_stats}->{name}->{insert} > 0) {
+	$logmsg .= ", + ".$cdb->{_stats}->{name}->{insert};
+	$logmsg .= " name inserts";
+	#printf "Global name inserts +%d\n", $cdb->{_stats}->{name}->{insert};
+}
+if ($gndbsz > $godbsz) {
+	my $change = $gndbsz-$godbsz;
+	$logmsg .= ", +".$change;
+	$logmsg .= " dbsize";
+	#printf "Global dbsz +%d\n", $gndbsz-$godbsz;
+}
+my $endtime = time();
+
+$logmsg .= ", ".($endtime-$starttime)."s";
+
+$logmsg =~ s/ , / /g;
+syslog($prio, $logmsg);
+
+	
+if ($opt_v>0) {
+	printf "Bonus info.. max val was a %s, value %s, id %d\n", $maxname, $maxval, $maxid;
+}
+
+sub get_data {
+	my ($cdb, $url) = @_;
+
+	my $ci = { };
+	my $xtra = { };
+
+	$ci->{key} = "$url";
+
+	my $ri = $cache->cache($ci);
+
+	# only check cache if what we have has the same modification date
+	if (!is_modified($cdb, $url, $xtra)) {
+		if (defined($ri)) {
+			return $ri;
+		}
+	}
+
+	# be gentle, don't spam, 1s delay ought to be kind enough
+	my $delay=1;
+	while ( ($lastfetch+$delay) > time() ) {
+		sleep(1);
+	}
+	$lastfetch = time();
+
+	$ci->{data} = "";
+
+	my $line;
+	my $data;
+
+	$data = $www->get($url);
+	foreach my $l (split(/^/,$data)) {
+		chomp($line = $l);
+		$line =~ s/\xef\xbb\xbf//g;
+		$line =~ s/\x0d//g; # THE carriage return char
+		$ci->{data} .= "$line\n";
+	}
+
+	$ri = $cache->cache($ci);
+	modified($cdb, $url, $xtra->{res});
+	return $ri;
+}
+
+# is_modified stores info about a url if not seen before and returns yes
+#  otherwise checks if Last-Modified has changed, and returns yes/no appropriately
+
+# XXX future work: expires .. don't query remote if cache exists and hasn't expired?
+
+# see also modified()
+
+sub is_modified {
+	my ($cdb, $url, $xtra) = @_;
+	#printf STDERR "is_modified(cdb, $url)...\n";
+	my ($yes,$no) = (1,0);
+
+	my $res = $www->head($url);
+	$xtra->{res} = $res;
+	my $q = "SELECT id,lastmod from ee_api_urlstatus where url=?";
+	my $ret = $cdb->cached_execute($q, $url);
+
+	if (defined($ret->{errstr})) {
+		#print "is_modified(cdb, $url): SELECT rv is a ".ref($ret->{rv})." and contains ";
+		print Dumper($ret->{rv})."\n";
+		print "ret: ";
+		print Dumper($ret)."\n";
+		print $ret->{errstr};
+		print "...bailing\n";
+		exit(1);
+	}
+	my (@ret) = $ret->{sth}->fetchrow_array;
+	$ret->{sth}->finish;
+	if ($#ret < 0 || !defined($ret[0])) {
+		if ($opt_v>0) {
+			#print "is_modified(cdb, $url): url not found\n";
+		}
+		$q = "INSERT into ee_api_urlstatus (url,contlen,conttype,expires,lastmod,expectct) ";
+		$q   .= " values (?,?,?,?,?,?)";
+		$ret = $cdb->cached_execute($q, $url,
+			$res->header('Content-Length'),
+			$res->header('Content-Type'),
+			$res->header('Expires'),
+			$res->header('Last-Modified'),
+			$res->header('Expect-CT'));
+		if (defined($ret->{errstr})) {
+			print "save_name(cdb, $url): INSERT rv is a ".ref($ret->{rv})." and contains ";
+			print Dumper($ret->{rv})."\n";
+			print $ret->{errstr};
+			exit(1);
+		}
+		return $yes;
+	}
+
+	$xtra->{dbid} = $ret[0];
+
+	if ($opt_v>0) {
+		print STDERR "==> head $url\n";
+		print STDERR "    headers:\n";
+		my @headernames = $res->header_field_names();
+		foreach my $h (@headernames) {
+			printf STDERR "       %s = %s\n",$h,$res->header($h);
+		}
+	}
+
+	if ($opt_v>0) {
+	printf STDERR "is_modified: header Last-Modified='%s' vs db lastmod='%s'\n",
+		$res->header('Last-Modified'),
+		$ret[1];
+	}
+	my $ht = UnixDate($res->header('Last-Modified'),"%s");
+	my $dt = UnixDate($ret[1],"%s");
+
+	if ($opt_v>0) {
+	printf STDERR "is_modified: header '%s' vs db '%s'\n", $ht, $dt;
+	}
+
+	if (!defined($ht)) {
+		return $yes;
+	}
+	if (!defined($dt)) {
+		return $yes;
+	}
+	if ($ht == $dt) {
+		return $no;
+	}
+	return $yes;
+}
+
+sub modified {
+	my ($cab, $url, $xtra) = @_;
+
+	my $res = $xtra->{res};
+	my $q = "UPDATE ee_api_urlstatus set contlen=?,conttype=?,expires=?,lastmod=?,expectct=? ";
+	$q   .= " where id = ?";
+
+	if (!defined($xtra->{dbid})) {
+		return;
+	}
+
+	my $ret = $cdb->cached_execute($q,
+		$res->header('Content-Length'),
+		$res->header('Content-Type'),
+		$res->header('Expires'),
+		$res->header('Last-Modified'),
+		$res->header('Expect-CT'),
+		$xtra->{dbid});
+	if (defined($ret->{errstr})) {
+		print "modified(cdb, $url): INSERT rv is a ".ref($ret->{rv})." and contains ";
+		print Dumper($ret->{rv})."\n";
+		print $ret->{errstr};
+		exit(1);
+	}
+
+}
+
+
+# db interaction routines
+
+sub save_name {
+	my ($cdb, $id, $name) = @_;
+	if ($opt_v>0) {
+		printf STDERR "save_name: id=%s name=%s\n",$id,$name;
+	}
+
+	my $q = "SELECT id from ee_api_names where id=?";
+	my $ret = $cdb->cached_execute($q, $id);
+
+	if (defined($ret->{errstr})) {
+		print "save_name(cdb, $id, $name): SELECT rv is a ".ref($ret->{rv})." and contains ";
+		print Dumper($ret->{rv})."\n";
+		print "ret: ";
+		print Dumper($ret)."\n";
+		print "...bailing\n";
+		exit(1);
+	}
+	my (@ret) = $ret->{sth}->fetchrow_array;
+	$ret->{sth}->finish;
+	if ($#ret < 0 || !defined($ret[0])) {
+		if ($opt_v>0) {
+			print "save_name(cdb, $id, $name): id not found\n";
+		}
+		$q = "INSERT into ee_api_names (id,name) ";
+		$q   .= " values (?,?)";
+		$ret = $cdb->cached_execute($q, $id, $name);
+		if (defined($ret->{errstr})) {
+			print "save_name(cdb, $id, $name): INSERT rv is a ".ref($ret->{rv})." and contains ";
+			print Dumper($ret->{rv})."\n";
+			exit(1);
+		}
+		$cdb->{_stats}->{name}->{insert}++;
+		return;
+	}
+	#print "save_name(cdb, $id, $name): rv is a ".ref($rv)." and contains ";
+	#print Dumper($rv)."\n";
+}
+sub save_data {
+	my ($cdb, $id, $d) = @_;
+	my $timestr = strftime("%Y-%m-%d %H:%M:%S GMT", gmtime($d->{time}));
+	if ($opt_v>0) {
+		printf STDERR "save_data: id=%s, time=%s\n",$id, $timestr;
+	}
+
+	my $q = "SELECT id from ee_api_data where id=? and tradetime=?";
+	my $ret = $cdb->cached_execute($q, $id, $timestr);
+
+	if (defined($ret->{errstr})) {
+		printf "save_data(cdb, %s, %s): SELECT rv is a ".ref($ret->{rv})." and contains ",$id,$timestr;
+		print Dumper($ret->{rv})."\n";
+		print "ret: ";
+		print Dumper($ret)."\n";
+		print "...bailing\n";
+		exit(1);
+	}
+	my (@ret) = $ret->{sth}->fetchrow_array;
+	$ret->{sth}->finish;
+	if ($#ret < 0 || !defined($ret[0])) {
+		if ($opt_v > 0) {
+			printf "save_data(cdb, %s, %s): id not found\n",$id,$timestr;
+		}
+		$q  = "INSERT into ee_api_data";
+		$q .= " (id,tradetime,sell,buy,lowest_sell,highest_buy,volume)";
+		$q .= " values (?,?,?,?,?,?,?)";
+		$ret = $cdb->cached_execute($q, $id,
+				$timestr,
+				$d->{sell},
+				$d->{buy},
+				$d->{lowest_sell},
+				$d->{highest_buy},
+				$d->{volume});
+		if (defined($ret->{errstr})) {
+			printf "save_data(cdb, %s, %s): INSERT rv is a ".ref($ret->{rv})." and contains ",$id,$timestr;
+			print Dumper($ret->{rv})."\n";
+			exit(1);
+		}
+		$cdb->{_stats}->{data}->{insert}++;
+		return;
+	}
+	#print "save_name(cdb, $id, $name): rv is a ".ref($rv)." and contains ";
+	#print Dumper($rv)."\n";
+}
+
+1;
