@@ -31,6 +31,7 @@ use Module::Load;
 use POSIX qw{getpid};
 
 has config => ( is => 'ro' );
+has appname => ( is => 'ro' );
 
 sub init {
 	my $me = shift;
@@ -110,7 +111,9 @@ sub init_db {
 		$dbinfo->{'pgsz'}          = 1;
 		$dbinfo->{'get_dbsz'}      = "SELECT pg_database_size(datname) db_size FROM pg_database where datname = '$db' ORDER BY db_size";
 		# XXX make a function call??
-		$dbh->do("SET application_name = 'ee_api/".getpid()."'");
+		my $appname = sprintf("%s/%d", $me->appname, getpid());
+		#print STDERR "appname = ${appname}\n";
+		$dbh->do("SET application_name = '${appname}'");
 	} elsif ($dbmsname eq 'SQLite') {
 		my $q = "pragma page_size";
 		# XXX fixme

@@ -50,6 +50,7 @@ our $config = Config::Tiny->read( $opt_c );
 
 my $cdb = Common::Db->new(
 	'config' => $config,
+	'appname' => 'ee-tag',
 );
 $cdb->init;
 
