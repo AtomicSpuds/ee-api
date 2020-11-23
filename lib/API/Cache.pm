@@ -21,7 +21,7 @@ use IO::Compress::Xz; # qw(xz $XzError);
 use IO::Uncompress::UnXz; # qw(unxz $UnXzError);
 
 sub new {
-	my ($class) = @_;
+	my ($class, $appname) = @_;
 
 	my $me = { };
 
@@ -29,7 +29,7 @@ sub new {
 
 	my $ret = bless $me, $class;
 
-	$me->cache_setup();
+	$me->cache_setup($appname);
 
 	return $ret;
 }
@@ -142,12 +142,12 @@ sub cache_str2hash {
 }
 
 sub cache_setup {
-	my ($me) = @_;
+	my ($me,$appname) = @_;
 
 	use Crypt::Digest::SHA256;
 
 	my $HOME=$ENV{'HOME'};
-	my $cdir = "${HOME}/.cache/ee-api";
+	my $cdir = "${HOME}/.cache/${appname}";
 	if (! -d "${HOME}/.cache") {
 		mkdir("${HOME}/.cache") || die
 	}
