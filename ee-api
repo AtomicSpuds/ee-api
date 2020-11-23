@@ -25,8 +25,8 @@ use JSON;
 use POSIX qw{strftime};
 use Sys::Syslog qw(:standard :macros);
 
-use API::Cache;
 use API::WWW;
+use Common::Cache;
 use Common::Db;
 
 STDERR->autoflush(1);
@@ -37,10 +37,11 @@ our $starttime = time();
 our $opt_v = 0;
 our $opt_s;
 our $opt_c;
+our $opt_q;
 
 $opt_c = $ENV{'HOME'}."/.ee-api.conf";
 
-getopt('c:s:v');
+getopt('c:qs:v');
 
 if (!defined($opt_v)) {
 	$opt_v = 0;
@@ -64,7 +65,7 @@ $cdb->{_stats}->{name}->{insert} = 0;
 $cdb->{_stats}->{count}->{procesed} = 0;
 $cdb->{_stats}->{count}->{updated} = 0;
 
-our $cache = API::Cache->new();
+our $cache = Common::Cache->new("ee-api");
 our $json = JSON->new->allow_nonref;
 our $www = API::WWW->new();
 
@@ -124,6 +125,9 @@ foreach my $l (split(/^/,$csv)) {
 		printf STDERR "==> %s\n", $name;
 	}
 	my $ri = get_data($cdb, "${apiurl}/$id");
+	if (defined($opt_q)) {
+		next;
+	}
 
 	my $parsed;
 	eval {
@@ -278,6 +282,9 @@ sub get_data {
 
 	# be gentle, don't spam, 1s delay ought to be kind enough
 	my $delay=1;
+	if (defined($opt_q)) {
+		$delay=0;
+	}
 	while ( ($lastfetch+$delay) > time() ) {
 		sleep(1);
 	}
