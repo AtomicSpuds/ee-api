@@ -149,7 +149,7 @@ CREATE TABLE public.ee_api_urlstatus (
     expires timestamp without time zone,
     lastmod timestamp with time zone,
     expectct text,
-    crated timestamp with time zone DEFAULT now()
+    created timestamp with time zone DEFAULT now()
 );
 
 
