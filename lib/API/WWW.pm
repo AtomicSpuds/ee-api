@@ -28,7 +28,8 @@ sub new {
 
 	$me->{ua} = LWP::UserAgent->new();
 
-	$me->{ua}->agent( "Eve Echoes API Archiver/0.0 " . $me->{ua}->agent() );
+	#$me->{ua}->agent( "Eve Echoes API Archiver/0.0 " . $me->{ua}->agent() );
+	$me->{ua}->agent( "OpenBSD ftp" );
 	$me->{ua}->env_proxy(1);
 	$me->{ua}->timeout(60);
 
